@@ -6,6 +6,7 @@ from collections import namedtuple
 
 import pandas as pd
 import numpy as np
+import arviz
 
 from summer2.utils import ref_times_to_dti
 
@@ -28,8 +29,32 @@ ADAPTIVE_METROPOLIS = {
 }
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 MCMCRes = namedtuple("MCMCRes", "parameters ll lp aq accept run_num")
+
+
+class _AdaptiveMCMC:
+    def __init__(
+        self,
+        num_chains: int,
+        build_model: Callable,
+        model_base_parameters: dict,
+        priors: List[BasePrior],
+        targets: List[BaseTarget],
+        initial_priors: dict,
+        build_model_kwargs: dict = None,
+        chain_id: int = 0,
+        haario_scaling_factor: float = DEFAULT_HAARIO_SCALING_FACTOR,
+        adaptive_proposal: bool = True,
+        metropolis_init_rel_step_size: float = DEFAULT_METRO_STEP,
+        fixed_proposal_steps: int = DEFAULT_STEPS,
+        seed: int = 0,
+        initial_jumping_stdev_ratio: float = 0.25,
+        jumping_stdev_adjustment: float = 0.5,
+    ):
+        pass
+        # WIP
 
 
 class AdaptiveChain:
@@ -250,7 +275,13 @@ class AdaptiveChain:
                 return
 
         while True:
-            logging.info("Running MCMC iteration %s, run %s", self.n_iters_real, self.run_num)
+            if (self.run_num % 1000) == 0:
+                logger.info(
+                    "Chain %s: running iteration %s, run %s",
+                    self.chain_id,
+                    self.n_iters_real,
+                    self.run_num,
+                )
 
             # Propose new parameter set.
             proposed_iterative_params_trans = self.propose_new_iterative_params_trans(
@@ -329,7 +360,6 @@ class AdaptiveChain:
                 )
             )
 
-            logging.info("Finished MCMC iteration %s, run %s", self.n_iters_real, self.run_num)
             self.run_num += 1
             self.n_iters_real += 1
             if available_time:
@@ -511,6 +541,21 @@ class AdaptiveChain:
             self.mcmc_trace_matrix = np.concatenate(
                 (self.mcmc_trace_matrix, np.array([params_to_store]))
             )
+
+    def to_arviz(self, burnin: int):
+        trace_data = {p.name: [] for p in self.priors}
+        last_accept = None
+        for r in self.results[burnin:]:
+            if r.accept:
+                last_accept = r
+                cur_r = r
+            else:
+                cur_r = last_accept
+
+            if cur_r is not None:
+                for k, v in trace_data.items():
+                    v.append(cur_r.parameters[k])
+        return arviz.from_dict(trace_data)
 
 
 def sample_from_adaptive_gaussian(prev_params, adaptive_cov_matrix):
