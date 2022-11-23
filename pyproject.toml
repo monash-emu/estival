@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "estival"
+version = "0.1.0"
+readme = "README.md"
+license = "BSD-2-Clause"
+homepage = "https://github.com/monash-emu/estival"
+repository = "https://github.com/monash-emu/estival"
+documentation = "https://github.com/monash-emu/estival"
+keywords = [
+    "calibration",
+    "summerepi"
+]
+description = "A set of calibration and probabilistic programming tools for use with summerepi2"
+authors = ["David Shipman <dshipman@gmail.com>"]
+packages = [
+    {include = "estival"}
+]
+
+[tool.poetry.dependencies]
+python = ">=3.7.0,<3.11"
+numpy = ">=1.20.3"
+scipy = ">=1.7.3"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.5"
+black = "^20.8b0"
+pytest-parallel = "^0.1.0"
+pre-commit = "^2.19.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+
