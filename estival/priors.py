@@ -1,11 +1,8 @@
-from typing import Tuple, List, Union
-from abc import ABC, abstractmethod
+from typing import Tuple, Union
+from abc import ABC
 
-import numpy as np
 from scipy import stats
 from scipy.optimize import minimize
-
-from autumn.calibration.utils import find_distribution_params_from_mean_and_ci
 
 
 class BasePrior(ABC):
