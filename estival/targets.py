@@ -61,6 +61,8 @@ def _build_jax_eval_nbinom(evaluator):
         mu = modelled
         # work out parameter p to match the distribution mean with the model output
         p = mu / (mu + n)
+        # Attempt to minimize -inf showing up
+        p = jnp.where(p == 0.0, 1e-16, p)
         # ll = np.sum(stats.nbinom.logpmf(self.data, n, 1.0 - p) * self.time_weights)
         ll = jnp.sum(jsp.stats.nbinom.logpmf(evaluator.data, n, 1.0 - p) * evaluator.time_weights)
         return ll
@@ -77,7 +79,7 @@ class NegativeBinomialEvaluator(TargetEvaluator):
         self._eval_func = _build_jax_eval_nbinom(self)
 
     def evaluate(self, modelled: np.array, parameters: dict) -> float:
-        return float(self._eval_func(modelled, parameters))
+        return float(self._eval_func(modelled[self.index], parameters))
 
 
 class NegativeBinomialTarget(BaseTarget):
@@ -112,12 +114,13 @@ class TruncNormalTarget(BaseTarget):
 
     def __init__(
         self,
+        name: str,
         data: pd.Series,
         trunc_range: Tuple[float, float],
         stdev: DistriParam,
         time_weights: pd.Series = None,
     ):
-        super().__init__(data, time_weights)
+        super().__init__(name, data, time_weights)
         self.trunc_range = trunc_range
         self.stdev = stdev
 
@@ -133,8 +136,10 @@ class NormalTarget(BaseTarget):
     A calibration target sampled from a normal distribution
     """
 
-    def __init__(self, data: pd.Series, stdev: DistriParam, time_weights: pd.Series = None):
-        super().__init__(data, time_weights)
+    def __init__(
+        self, name: str, data: pd.Series, stdev: DistriParam, time_weights: pd.Series = None
+    ):
+        super().__init__(name, data, time_weights)
         self.stdev = stdev
 
     def get_priors(self):
@@ -142,6 +147,27 @@ class NormalTarget(BaseTarget):
             return [self.stdev]
         else:
             return []
+
+    def get_evaluator(self, model_times: pd.Index) -> TargetEvaluator:
+        return NormalTargetEvaluator(self, model_times)
+
+
+class NormalTargetEvaluator(TargetEvaluator):
+    def __init__(self, target: BaseTarget, model_times: pd.Index):
+        self.target = target.filtered(model_times)
+        self.data = self.target.data.to_numpy()
+        self.index = np.array([model_times.get_loc(t) for t in self.target.data.index])
+        self.time_weights = self.target.time_weights.to_numpy()
+        self._eval_func = _build_jax_eval_nbinom(self)
+
+    def evaluate(self, modelled: np.array, parameters: dict) -> float:
+        if isinstance(self.target.stdev, BasePrior):
+            sd = parameters[self.target.stdev.name]
+        else:
+            sd = self.target.stdev
+        return (
+            stats.norm.logpdf(modelled[self.index], loc=self.data, scale=sd) * self.time_weights
+        ).sum()
 
 
 def get_target_sd(data: pd.Series) -> float:
