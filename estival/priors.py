@@ -37,6 +37,9 @@ class BasePrior(ABC):
         """
         return self.rv.logpdf(x)
 
+    def __repr__(self):
+        return f"{type(self)} {self.name}"
+
 
 # Union type for hierarchical/dispersion parameters
 DistriParam = Union[float, BasePrior]
