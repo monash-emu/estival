@@ -110,6 +110,8 @@ class AdaptiveChain:
 
         self._prepare_model(build_model, model_base_parameters, build_model_kwargs)
 
+        self._has_run = False
+
     def _prepare_model(self, build_model, model_base_parameters, build_model_kwargs):
         """Prepare for a run, so that all state is valid for calling loglikelihood, logprior etc
 
@@ -166,18 +168,23 @@ class AdaptiveChain:
         max_iter: int = None,
     ):
 
-        self.starting_point = self.build_transformations(self.initial_priors)
+        if not self._has_run:
+            self.starting_point = self.build_transformations(self.initial_priors)
 
-        # Set chain specific seed
-        # Chain 0 will have seed equal to that set in the calibration initialisation
-        self.seed_chain = ((self.chain_id * 2**22) + self.seed) % (2**32)
+            # Set chain specific seed
+            # Chain 0 will have seed equal to that set in the calibration initialisation
+            self.seed_chain = ((self.chain_id * 2**22) + self.seed) % (2**32)
 
-        self.mcmc_trace_matrix = None  # will store the results of the MCMC model calibration
+            self.mcmc_trace_matrix = None  # will store the results of the MCMC model calibration
 
-        np.random.seed(self.seed_chain)
+            np.random.seed(self.seed_chain)
 
-        # Actually run the calibration
-        self.run_autumn_mcmc(available_time, max_iter)
+            # Actually run the calibration
+            self.run_autumn_mcmc(available_time, max_iter)
+            self._has_run = True
+        else:
+            logger.info(f"Resuming run for {max_iter} iterations")
+            self.enter_mcmc_loop(max_iters=max_iter + self.n_iters_real)
 
     def run_model_with_params(self, proposed_params: dict):
         """
@@ -231,16 +238,14 @@ class AdaptiveChain:
                 relative_prior_width * prior_width * self.initial_jumping_stdev_ratio
             )
 
-    def test_in_prior_support(self, iterative_params):
-        in_support = True
+    def validate_in_prior_support(self, iterative_params):
         for i, prior in enumerate(self.priors):
             # Work out bounds for acceptable values, using the support of the prior distribution
             lower_bound, upper_bound = prior.bounds()
             if iterative_params[i] < lower_bound or iterative_params[i] > upper_bound:
-                in_support = False
-                break
-
-        return in_support
+                raise Exception(
+                    "Sample generated outside prior support", prior, iterative_params[i]
+                )
 
     def run_autumn_mcmc(self, available_time: str = None, max_iters: int = None):
         """
@@ -289,9 +294,8 @@ class AdaptiveChain:
             )
             proposed_iterative_params = self.get_original_params(proposed_iterative_params_trans)
 
-            is_within_prior_support = self.test_in_prior_support(
-                proposed_iterative_params
-            )  # should always be true but this is a good safety check
+            # Will raise an exception if an invalid sample is generated
+            self.validate_in_prior_support(proposed_iterative_params)
 
             # combine all sampled params into a single dictionary
             iterative_samples_dict = {
@@ -299,46 +303,39 @@ class AdaptiveChain:
             }
             all_params_dict = iterative_samples_dict
 
-            if is_within_prior_support:
-                # Evaluate log-likelihood.
-                proposed_loglike = self.loglikelihood(all_params_dict)
+            # Evaluate log-likelihood.
+            proposed_loglike = self.loglikelihood(all_params_dict)
 
-                # Evaluate log-prior.
-                proposed_logprior = self.logprior(all_params_dict)
+            # Evaluate log-prior.
+            proposed_logprior = self.logprior(all_params_dict)
 
-                # posterior distribution
-                proposed_log_posterior = proposed_loglike + proposed_logprior
+            # posterior distribution
+            proposed_log_posterior = proposed_loglike + proposed_logprior
 
-                # transform the density
-                proposed_acceptance_quantity = proposed_log_posterior
+            # transform the density
+            proposed_acceptance_quantity = proposed_log_posterior
 
-                for i, prior in enumerate(
-                    self.priors
-                ):  # multiply the density with the determinant of the Jacobian
+            for i, prior in enumerate(
+                self.priors
+            ):  # multiply the density with the determinant of the Jacobian
 
-                    inv_derivative = self.transform[prior.name].inverse_derivative(
-                        proposed_iterative_params_trans[i]
-                    )
-                    if inv_derivative > 0:
-                        proposed_acceptance_quantity += np.log(inv_derivative)
-                    else:
-                        proposed_acceptance_quantity += np.log(1.0e-100)
-
-                is_auto_accept = (
-                    self.last_acceptance_quantity is None
-                    or proposed_acceptance_quantity >= self.last_acceptance_quantity
+                inv_derivative = self.transform[prior.name].inverse_derivative(
+                    proposed_iterative_params_trans[i]
                 )
-                if is_auto_accept:
-                    accept = True
+                if inv_derivative > 0:
+                    proposed_acceptance_quantity += np.log(inv_derivative)
                 else:
-                    accept_prob = np.exp(
-                        proposed_acceptance_quantity - self.last_acceptance_quantity
-                    )
-                    accept = (np.random.binomial(n=1, p=accept_prob, size=1) > 0)[0]
+                    proposed_acceptance_quantity += np.log(1.0e-100)
+
+            is_auto_accept = (
+                self.last_acceptance_quantity is None
+                or proposed_acceptance_quantity >= self.last_acceptance_quantity
+            )
+            if is_auto_accept:
+                accept = True
             else:
-                accept = False
-                proposed_loglike = None
-                proposed_acceptance_quantity = None
+                accept_prob = np.exp(proposed_acceptance_quantity - self.last_acceptance_quantity)
+                accept = (np.random.binomial(n=1, p=accept_prob, size=1) > 0)[0]
 
             # Update stored quantities.
             if accept:
