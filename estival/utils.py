@@ -74,14 +74,14 @@ def _to_df(mcmc, burnin=0, full_trace=False, include_rejected=False):
     return pd.DataFrame(out_dict)
 
 
-def to_df(chains, full_trace=False, include_rejected=False):
+def to_df(chains, burnin=0, full_trace=False, include_rejected=False):
     from estival.calibration.mcmc.adaptive import AdaptiveChain
 
     if isinstance(chains, AdaptiveChain):
-        return _to_df(chains, full_trace, include_rejected)
+        return _to_df(chains, burnin, full_trace, include_rejected)
     chain_dfs = []
     for i, chain_res in enumerate(chains):
-        chain_df = to_df(chain_res, full_trace, include_rejected)
+        chain_df = _to_df(chain_res, burnin, full_trace, include_rejected)
         chain_df["chain"] = i
         chain_dfs.append(chain_df)
     return pd.concat(chain_dfs)
