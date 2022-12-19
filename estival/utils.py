@@ -69,7 +69,7 @@ def _to_df(mcmc, burnin=0, full_trace=False, include_rejected=False):
                 out_dict["log_posterior"].append(cur_accepted.lp)
                 out_dict["log_likelihood"].append(cur_accepted.ll)
                 out_dict["iteration"].append(i)
-                out_dict["accepted"].append(cur_accepted.accept)
+                out_dict["accepted"].append(r.accept)
 
     return pd.DataFrame(out_dict)
 
