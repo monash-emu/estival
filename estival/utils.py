@@ -1,5 +1,6 @@
 import arviz as az
 import numpy as np
+import pandas as pd
 
 
 def collect_all_priors(priors, targets):
@@ -40,3 +41,47 @@ def to_arviz(chains, burnin: int):
     for p in params:
         all_params[p] = np.stack([c[p] for c in c_trace])
     return az.from_dict(all_params)
+
+
+def _to_df(mcmc, burnin=0, full_trace=False, include_rejected=False):
+    out_dict = {p.name: [] for p in mcmc.priors}
+    out_dict["log_posterior"] = []
+    out_dict["log_likelihood"] = []
+    out_dict["iteration"] = []
+    out_dict["accepted"] = []
+
+    cur_accepted = mcmc.results[0]
+
+    for i, r in enumerate(mcmc.results):
+        add_this = full_trace or include_rejected
+
+        if r.accept:
+            cur_accepted = r
+            add_this = True
+
+        if include_rejected:
+            cur_accepted = r
+
+        if i >= burnin:
+            if add_this:
+                for k, v in cur_accepted.parameters.items():
+                    out_dict[k].append(v)
+                out_dict["log_posterior"].append(cur_accepted.lp)
+                out_dict["log_likelihood"].append(cur_accepted.ll)
+                out_dict["iteration"].append(i)
+                out_dict["accepted"].append(cur_accepted.accept)
+
+    return pd.DataFrame(out_dict)
+
+
+def to_df(chains, full_trace=False, include_rejected=False):
+    from estival.calibration.mcmc.adaptive import AdaptiveChain
+
+    if isinstance(chains, AdaptiveChain):
+        return _to_df(chains, full_trace, include_rejected)
+    chain_dfs = []
+    for i, chain_res in enumerate(chains):
+        chain_df = to_df(chain_res, full_trace, include_rejected)
+        chain_df["chain"] = i
+        chain_dfs.append(chain_df)
+    return pd.concat(chain_dfs)
