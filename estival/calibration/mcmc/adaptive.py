@@ -1,4 +1,4 @@
-from typing import List, Callable
+from typing import List, Callable, Dict
 from time import time
 from datetime import timedelta
 import logging
@@ -14,6 +14,7 @@ from estival.priors import BasePrior
 from estival.targets import BaseTarget
 from estival.utils import collect_all_priors
 from .transformations import TransformedPrior
+from .covariance import RunningCovariance
 
 # class AdaptiveMCMC:
 #    def __init__(self, priors, targets, model)
@@ -87,6 +88,7 @@ class AdaptiveChain:
         seed: int = 0,
         initial_jumping_stdev_ratio: float = 0.25,
         jumping_stdev_adjustment: float = 0.5,
+        initial_covariance=None,
     ):
         """
         Defines a new calibration.
@@ -111,6 +113,15 @@ class AdaptiveChain:
         self._prepare_model(build_model, model_base_parameters, build_model_kwargs)
 
         self._has_run = False
+
+        if initial_covariance is None:
+            initial_covariance = np.zeros((len(self.priors), len(self.priors)))
+            initial_mean = np.zeros(len(self.priors))
+            self.covariance = RunningCovariance(initial_covariance, initial_mean, 1.0)
+        else:
+            self.covariance = initial_covariance
+
+        self.build_transformations()
 
     def _prepare_model(self, build_model, model_base_parameters, build_model_kwargs):
         """Prepare for a run, so that all state is valid for calling loglikelihood, logprior etc
@@ -169,7 +180,7 @@ class AdaptiveChain:
     ):
 
         if not self._has_run:
-            self.starting_point = self.build_transformations(self.initial_priors)
+            self.starting_point = self.get_transformed_start(self.initial_priors)
 
             # Set chain specific seed
             # Chain 0 will have seed equal to that set in the calibration initialisation
@@ -374,25 +385,26 @@ class AdaptiveChain:
                     break
 
             # Check that the pre-adaptive phase ended with a decent acceptance ratio
-            if self.adaptive_proposal and self.run_num == self.n_steps_fixed_proposal:
-                acceptance_ratio = self.n_accepted / self.run_num
-                logger.info(
-                    "Pre-adaptive phase completed at %s iterations after %s runs with an acceptance ratio of %s.",
-                    self.n_iters_real,
-                    self.run_num,
-                    acceptance_ratio,
-                )
-                if acceptance_ratio < ADAPTIVE_METROPOLIS["MIN_ACCEPTANCE_RATIO"]:
-                    logger.info("Acceptance ratio too low, restart sampling from scratch.")
-                    (
+            if self.n_steps_fixed_proposal > 0:
+                if self.adaptive_proposal and self.run_num == self.n_steps_fixed_proposal:
+                    acceptance_ratio = self.n_accepted / self.run_num
+                    logger.info(
+                        "Pre-adaptive phase completed at %s iterations after %s runs with an acceptance ratio of %s.",
+                        self.n_iters_real,
                         self.run_num,
-                        self.n_accepted,
-                        self.last_accepted_params_trans,
-                        self.last_acceptance_quantity,
-                    ) = (0, 0, None, None)
-                    self.reduce_proposal_step_size()
-                else:
-                    logger.info("Acceptance ratio acceptable, continue sampling.")
+                        acceptance_ratio,
+                    )
+                    if acceptance_ratio < ADAPTIVE_METROPOLIS["MIN_ACCEPTANCE_RATIO"]:
+                        logger.info("Acceptance ratio too low, restart sampling from scratch.")
+                        (
+                            self.run_num,
+                            self.n_accepted,
+                            self.last_accepted_params_trans,
+                            self.last_acceptance_quantity,
+                        ) = (0, 0, None, None)
+                        self.reduce_proposal_step_size()
+                    else:
+                        logger.info("Acceptance ratio acceptable, continue sampling.")
 
     def reduce_proposal_step_size(self):
         """
@@ -404,24 +416,30 @@ class AdaptiveChain:
 
     def build_adaptive_covariance_matrix(self, haario_scaling_factor):
         scaling_factor = haario_scaling_factor**2 / len(self.priors)  # from Haario et al. 2001
-        cov_matrix = np.cov(self.mcmc_trace_matrix, rowvar=False)
+        # cov_matrix = np.cov(self.mcmc_trace_matrix, rowvar=False)
+        cov_matrix = self.covariance.cov_t
         adaptive_cov_matrix = scaling_factor * cov_matrix + scaling_factor * ADAPTIVE_METROPOLIS[
             "EPSILON"
         ] * np.eye(len(self.priors))
         return adaptive_cov_matrix
 
-    def build_transformations(self, starting_point: dict):
+    def build_transformations(self):
+        self.transform : Dict[str, TransformedPrior] = {}
+
+        for prior in self.priors:
+            param_name = prior.name
+            self.transform[param_name] = TransformedPrior(prior)
+
+    def get_transformed_start(self, starting_point: dict):
         """
         Build transformation functions between the parameter space and R^n.
         Additionally, perform any updates to initial point bounding and jumping sds
         """
-        self.transform = {}
 
         starting_point = starting_point.copy()
 
         for i, prior in enumerate(self.priors):
             param_name = prior.name
-            self.transform[param_name] = TransformedPrior(prior)
 
             # lower_bound = self.param_bounds[param_name][0]
             # upper_bound = self.param_bounds[param_name][1]
@@ -538,6 +556,8 @@ class AdaptiveChain:
             self.mcmc_trace_matrix = np.concatenate(
                 (self.mcmc_trace_matrix, np.array([params_to_store]))
             )
+
+        self.covariance.update(np.array(params_to_store))
 
     def to_arviz(self, burnin: int):
         trace_data = {p.name: [] for p in self.priors}

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "estival"
-version = "0.1.7"
+version = "0.2.1"
 readme = "README.md"
 license = "BSD-2-Clause"
 homepage = "https://github.com/monash-emu/estival"
@@ -8,6 +8,9 @@ repository = "https://github.com/monash-emu/estival"
 documentation = "https://github.com/monash-emu/estival"
 keywords = [
     "calibration",
+    "optimization",
+    "bayesian",
+    "compartmental modelling",
     "summerepi"
 ]
 description = "A set of calibration and probabilistic programming tools for use with summerepi2"
@@ -17,10 +20,13 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.7.0,<3.11"
+python = ">=3.8.0"
 numpy = ">=1.20.3"
 scipy = ">=1.7.3"
 arviz = ">=0.12.1"
+nevergrad = ">=0.6.0"
+pymc = ">=5.2.0"
+summerepi2 = ">=1.2.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"

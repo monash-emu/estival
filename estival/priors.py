@@ -4,10 +4,17 @@ from abc import ABC
 from scipy import stats
 from scipy.optimize import minimize
 
+# pymc is optional - just be silent on failed import
+try:
+    import pymc as pm
+except:
+    pass
+
 
 class BasePrior(ABC):
-    def __init__(self, name: str):
+    def __init__(self, name: str, size: int = 1):
         self.name = name
+        self.size = size
 
     def bounds(self, ci=1.0) -> Tuple[float, float]:
         return self.rv.interval(ci)
@@ -91,12 +98,15 @@ class UniformPrior(BasePrior):
     A uniformily distributed prior.
     """
 
-    def __init__(self, name: str, domain: Tuple[float, float]):
+    def __init__(self, name: str, domain: Tuple[float, float], size=1):
         super().__init__(name)
         self.start, self.end = domain
         self.distri_params = {"loc": self.start, "scale": self.end - self.start}
         self.rv = stats.uniform(**self.distri_params)
+        self.size = size
 
+    def to_pymc(self):
+        return pm.Uniform(self.name, lower=self.start, upper=self.end)
 
 class TruncNormalPrior(BasePrior):
     """
@@ -114,3 +124,7 @@ class TruncNormalPrior(BasePrior):
             "b": (trunc_range[1] - mean) / stdev,
         }
         self.rv = stats.truncnorm(**self.distri_params)
+
+    def to_pymc(self):
+        lower, upper = self.trunc_range
+        return pm.TruncatedNormal(self.name, mu=self.mean, sigma=self.stdev, lower=lower, upper=upper)

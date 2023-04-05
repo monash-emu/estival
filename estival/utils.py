@@ -85,3 +85,15 @@ def to_df(chains, burnin=0, full_trace=False, include_rejected=False):
         chain_df["chain"] = i
         chain_dfs.append(chain_df)
     return pd.concat(chain_dfs)
+
+def negative(f, *args, **kwargs):
+    """Wrap a positive function such that a minimizable version is returned instead
+
+    Args:
+        f: The callable to wrap
+    """
+
+    def _reflected(*args, **kwargs):
+        return float(0.0 - f(*args, **kwargs))
+    
+    return _reflected

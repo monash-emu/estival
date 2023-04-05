@@ -1,5 +1,5 @@
 from numpy import exp, log
-from scipy.special import logit, expit
+from jax.scipy.special import logit, expit
 
 
 def make_transform_func_with_lower_bound(lower_bound, func_type):
@@ -59,7 +59,7 @@ def make_transform_func_with_two_bounds(lower_bound, upper_bound, func_type):
 
         def func(y):
             inv_logit = expit(y)
-            return (upper_bound - lower_bound) * inv_logit * (1 - inv_logit)
+            return (upper_bound - lower_bound) * inv_logit * (1.0 - inv_logit)
 
     return func
 
