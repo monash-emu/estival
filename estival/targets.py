@@ -12,24 +12,24 @@ from jax import jit, scipy as jsp, numpy as jnp
 from .priors import DistriParam, BasePrior
 
 
-
-
 class BaseTarget(ABC):
-
     name: str
     data: pd.Series
     _data_attrs: List = []
 
-    def __init__(self, name: str, data: pd.Series, time_weights: pd.Series = None):
+    def __init__(
+        self, name: str, data: pd.Series, weight: float = 1.0, time_weights: pd.Series = None
+    ):
         # Make things easier for calibration by sanitizing the data here
         self.name = name
         self.data = data
 
         # Should do some validation on this - ie make sure indices match data
-        #if time_weights is None:
+        # if time_weights is None:
         #    time_weights = pd.Series(index=data.index, data=np.repeat(1.0 / len(data), len(data)))
 
         self.time_weights = time_weights
+        self.weight = weight
 
     def get_priors(self):
         return []
@@ -38,7 +38,7 @@ class BaseTarget(ABC):
         out_target = copy(self)
         valid_idx = index.intersection(self.data.index)
         out_target.data = out_target.data[valid_idx]
-        
+
         for da in self._data_attrs:
             data = getattr(out_target, da)
             setattr(out_target, da, data[valid_idx])
@@ -51,6 +51,7 @@ class BaseTarget(ABC):
     @abstractmethod
     def get_evaluator(self, model_times: pd.Index) -> TargetEvaluator:
         raise NotImplementedError()
+
 
 class TargetEvaluator(ABC):
     def __init__(self, target: BaseTarget, model_times: pd.Index):
@@ -88,12 +89,12 @@ class NegativeBinomialEvaluator(TargetEvaluator):
         p = jnp.where(p == 0.0, 1e-16, p)
         # ll = np.sum(stats.nbinom.logpmf(self.data, n, 1.0 - p) * self.time_weights)
         ll = jsp.stats.nbinom.logpmf(self.data, n, 1.0 - p)
-        
+
         if self.time_weights is not None:
             ll = ll * self.time_weights
-            return jnp.sum(ll)
+            return jnp.sum(ll) * self.target.weight
         else:
-            return jnp.mean(ll)
+            return jnp.mean(ll) * self.target.weight
 
 
 class NegativeBinomialTarget(BaseTarget):
@@ -106,9 +107,10 @@ class NegativeBinomialTarget(BaseTarget):
         name: str,
         data: pd.Series,
         dispersion_param: DistriParam,
+        weight: float = 1.0,
         time_weights: pd.Series = None,
     ):
-        super().__init__(name, data, time_weights)
+        super().__init__(name, data, weight, time_weights)
         self.dispersion_param = dispersion_param
 
     def get_priors(self):
@@ -131,14 +133,16 @@ class BinomialTarget(BaseTarget):
         name: str,
         data: pd.Series,
         sample_sizes: pd.Series,
+        weight: float = 1.0,
         time_weights: pd.Series = None,
     ):
-        super().__init__(name, data, time_weights)
+        super().__init__(name, data, weight, time_weights)
         self._data_attrs = ["sample_sizes"]
         self.sample_sizes = sample_sizes
 
     def get_evaluator(self, model_times: pd.Index) -> TargetEvaluator:
         return BinomialEvaluator(self, model_times)
+
 
 class BinomialEvaluator(TargetEvaluator):
     def __init__(self, target: BaseTarget, model_times: pd.Index):
@@ -148,20 +152,22 @@ class BinomialEvaluator(TargetEvaluator):
 
     def evaluate(self, modelled: np.array, parameters: dict) -> float:
         from tensorflow_probability.substrates import jax as tfp
+
         # use a binomial (n, p) where n is the sample size observed in the data and p the modelled proportion
         # We then evaluate the binomial density for k, which represents the numerator observed in the data
         n = self.target.sample_sizes
         p = modelled
-        k = self.target.data * n           
+        k = self.target.data * n
 
-        bdist = tfp.distributions.Binomial(total_count=n, probs = p)
+        bdist = tfp.distributions.Binomial(total_count=n, probs=p)
         ll = bdist.log_prob(k)
 
         if self.time_weights is not None:
             ll = ll * self.time_weights
-            return jnp.sum(ll)
+            return jnp.sum(ll) * self.target.weight
         else:
-            return jnp.mean(ll)
+            return jnp.mean(ll) * self.target.weight
+
 
 class TruncatedNormalTarget(BaseTarget):
     """
@@ -174,9 +180,10 @@ class TruncatedNormalTarget(BaseTarget):
         data: pd.Series,
         trunc_range: Tuple[float, float],
         stdev: DistriParam,
+        weight: float = 1.0,
         time_weights: pd.Series = None,
     ):
-        super().__init__(name, data, time_weights)
+        super().__init__(name, data, weight, time_weights)
         self.trunc_range = trunc_range
         self.stdev = stdev
 
@@ -185,11 +192,11 @@ class TruncatedNormalTarget(BaseTarget):
             return [self.stdev]
         else:
             return []
-        
+
     def get_evaluator(self, model_times: pd.Index) -> TargetEvaluator:
         return TruncatedNormalTargetEvaluator(self, model_times)
 
-        
+
 class TruncatedNormalTargetEvaluator(TargetEvaluator):
     def __init__(self, target: TruncatedNormalTarget, model_times: pd.Index):
         super().__init__(target, model_times)
@@ -210,9 +217,9 @@ class TruncatedNormalTargetEvaluator(TargetEvaluator):
 
         if self.time_weights is not None:
             ll = ll * self.time_weights
-            return jnp.sum(ll)
+            return jnp.sum(ll) * self.target.weight
         else:
-            return jnp.mean(ll)
+            return jnp.mean(ll) * self.target.weight
 
 
 class NormalTarget(BaseTarget):
@@ -221,9 +228,14 @@ class NormalTarget(BaseTarget):
     """
 
     def __init__(
-        self, name: str, data: pd.Series, stdev: DistriParam, time_weights: pd.Series = None
+        self,
+        name: str,
+        data: pd.Series,
+        stdev: DistriParam,
+        weight: float = 1.0,
+        time_weights: pd.Series = None,
     ):
-        super().__init__(name, data, time_weights)
+        super().__init__(name, data, weight, time_weights)
         self.stdev = stdev
 
     def get_priors(self):
@@ -250,9 +262,48 @@ class NormalTargetEvaluator(TargetEvaluator):
 
         if self.time_weights is not None:
             ll = ll * self.time_weights
-            return jnp.sum(ll)
+            return jnp.sum(ll) * self.target.weight
         else:
-            return jnp.mean(ll)
+            return jnp.mean(ll) * self.target.weight
+
+
+class CustomTargetEvaluator(TargetEvaluator):
+    def __init__(self, target, model_times, eval_func):
+        super().__init__(target, model_times)
+        self._eval_func = eval_func
+
+    def evaluate(self, modelled, parameters):
+        return (
+            self._eval_func(modelled[self.index], self.data, parameters, self.time_weights)
+            * self.target.weight
+        )
+
+
+class CustomTarget(BaseTarget):
+    def __init__(self, name, data, eval_func, weight=1.0, time_weights=None):
+        """Build a Target that uses a custom evaluation function.
+        Indexing and multiplication by weight factor is handled automatically,
+        but time_weights are not (see below)
+
+        For example:
+
+        def least_squares(modelled, obs, parameters, time_weights):
+            return (((modelled - obs) ** 2.0) * time_weights).sum()
+
+        CustomTarget("example", example_data, least_squares)
+
+        Args:
+            name: Name (key) of output to evaluate against
+            data: Series of data using same indexing conventions as model
+            eval_func: Callable as described above
+            weight (optional): Scales resulting output
+            time_weights (optional): Passed to eval_func - Series with index matching data
+        """
+        super().__init__(name, data, weight, time_weights)
+        self.eval_func = eval_func
+
+    def get_evaluator(self, model_times):
+        return CustomTargetEvaluator(self, model_times, self.eval_func)
 
 
 def get_target_sd(data: pd.Series) -> float:
