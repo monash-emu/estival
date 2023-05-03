@@ -34,26 +34,27 @@ class BayesianCompartmentalModel:
         dyn_params = list(model_params.intersection(set(self.priors)))
         self.model.set_derived_outputs_whitelist(list(self.targets))
 
-        ll_runner = self.model.get_runner(self.parameters, dyn_params)
+        self._ll_runner = self.model.get_runner(self.parameters, dyn_params)
 
         self.model.set_derived_outputs_whitelist([])
         self._full_runner = self.model.get_runner(self.parameters, dyn_params)
 
         tidx = pd.Index(self.model.times)
 
-        evaluators = {}
+        self._evaluators = {}
         for k, t in self.targets.items():
-            evaluators[k] = t.get_evaluator(tidx)
+            tev = t.get_evaluator(tidx)
+            self._evaluators[k] = tev.evaluate
 
         @jit
         def logll(**kwargs):
             dict_args = capture_model_kwargs(self.model, **kwargs)
-            res = ll_runner._run_func(dict_args)["derived_outputs"]
+            res = self._ll_runner._run_func(dict_args)["derived_outputs"]
 
             logdens = 0.0
-            for tk, te in evaluators.items():
+            for tk, te in self._evaluators.items():
                 modelled = res[tk]
-                logdens += te.evaluate(modelled, kwargs)
+                logdens += te(modelled, kwargs)
 
             if extra_ll:
                 logdens += extra_ll(kwargs)

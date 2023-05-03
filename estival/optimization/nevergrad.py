@@ -63,7 +63,7 @@ def optimize_model(
     num_workers: int = None,
     suggested: dict = None,
     init_method: str = "midpoint",
-    obj_function=Callable,
+    obj_function: Callable = None,
     invert_function=True,
 ):
     if not num_workers:

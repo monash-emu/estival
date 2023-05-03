@@ -86,7 +86,7 @@ class NegativeBinomialEvaluator(TargetEvaluator):
         # work out parameter p to match the distribution mean with the model output
         p = mu / (mu + n)
         # Attempt to minimize -inf showing up
-        p = jnp.where(p == 0.0, 1e-16, p)
+        p = jnp.where(p < 1e-16, 1e-16, p)
         # ll = np.sum(stats.nbinom.logpmf(self.data, n, 1.0 - p) * self.time_weights)
         ll = jsp.stats.nbinom.logpmf(self.data, n, 1.0 - p)
 
@@ -207,13 +207,21 @@ class TruncatedNormalTargetEvaluator(TargetEvaluator):
         else:
             sd = self.target.stdev
 
+        from tensorflow_probability.substrates.jax import distributions as tfpd
+
+        tdist = tfpd.TruncatedNormal(
+            loc=self.data, scale=sd, low=self.target.trunc_range[0], high=self.target.trunc_range[1]
+        )
+
         distri_params = {
             "scale": sd,
             "a": (self.target.trunc_range[0] - self.data) / sd,
             "b": (self.target.trunc_range[1] - self.data) / sd,
         }
 
-        ll = jsp.stats.truncnorm.logpdf(modelled[self.index], loc=self.data, **distri_params)
+        # ll = jsp.stats.truncnorm.logpdf(modelled[self.index], loc=self.data, **distri_params)
+
+        ll = tdist.log_prob(modelled[self.index])
 
         if self.time_weights is not None:
             ll = ll * self.time_weights

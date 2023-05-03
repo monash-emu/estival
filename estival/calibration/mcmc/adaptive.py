@@ -178,7 +178,6 @@ class AdaptiveChain:
         available_time: str = None,
         max_iter: int = None,
     ):
-
         if not self._has_run:
             self.starting_point = self.get_transformed_start(self.initial_priors)
 
@@ -211,7 +210,7 @@ class AdaptiveChain:
 
         modelled = self.run_model_with_params(all_params_dict)
 
-        ll = 0  # loglikelihood if using bayesian approach.
+        ll = 0.0  # loglikelihood if using bayesian approach.
 
         for k, te in self.target_evaluators.items():
             mdata = modelled[k]
@@ -237,7 +236,6 @@ class AdaptiveChain:
         self.jumping_sds = {}
 
         for i, prior in enumerate(self.priors):
-
             prior_low, prior_high = prior.bounds(0.95)
             prior_width = prior_high - prior_low
 
@@ -329,7 +327,6 @@ class AdaptiveChain:
             for i, prior in enumerate(
                 self.priors
             ):  # multiply the density with the determinant of the Jacobian
-
                 inv_derivative = self.transform[prior.name].inverse_derivative(
                     proposed_iterative_params_trans[i]
                 )
@@ -424,7 +421,7 @@ class AdaptiveChain:
         return adaptive_cov_matrix
 
     def build_transformations(self):
-        self.transform : Dict[str, TransformedPrior] = {}
+        self.transform: Dict[str, TransformedPrior] = {}
 
         for prior in self.priors:
             param_name = prior.name

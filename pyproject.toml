@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "estival"
-version = "0.2.2"
+version = "0.2.3"
 readme = "README.md"
 license = "BSD-2-Clause"
 homepage = "https://github.com/monash-emu/estival"
@@ -27,6 +27,7 @@ arviz = ">=0.12.1"
 nevergrad = ">=0.6.0"
 pymc = ">=5.2.0"
 summerepi2 = ">=1.2.1"
+tensorflow-probability = ">=0.9.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"
