@@ -12,3 +12,6 @@ Estival provides a simple API for using summer2 CompartmentalModels with a varie
 Add logprior/logposterior to BayesianCompartmentalModel
 - 0.2.3  
 Include tensorflow-probability(jax) for more (and better tested) stats modules
+- 0.2.4
+Bugfix (vector priors were not exported to pymc correctly)
+Add Epoch support to allow DatetimeIndex targets
