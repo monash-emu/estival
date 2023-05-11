@@ -25,9 +25,12 @@ class BayesianCompartmentalModel:
             priors = priors + t.get_priors()
         self.priors = {p.name: p for p in priors}
 
+        self._ref_idx = self.model._get_ref_idx()
+        self.epoch = self.model.get_epoch()
+
         self.loglikelihood = self._build_logll_func(extra_ll)
 
-        self._ref_idx = self.model._get_ref_idx()
+
 
     def _build_logll_func(self, extra_ll=None):
         model_params = self.model.get_input_parameters()
@@ -39,11 +42,9 @@ class BayesianCompartmentalModel:
         self.model.set_derived_outputs_whitelist([])
         self._full_runner = self.model.get_runner(self.parameters, dyn_params)
 
-        tidx = pd.Index(self.model.times)
-
         self._evaluators = {}
         for k, t in self.targets.items():
-            tev = t.get_evaluator(tidx)
+            tev = t.get_evaluator(self._ref_idx, self.epoch)
             self._evaluators[k] = tev.evaluate
 
         @jit

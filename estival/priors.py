@@ -1,6 +1,7 @@
 from typing import Tuple, Union
 from abc import ABC
 
+import numpy as np
 from scipy import stats
 from scipy.optimize import minimize
 
@@ -106,7 +107,13 @@ class UniformPrior(BasePrior):
         self.size = size
 
     def to_pymc(self):
-        return pm.Uniform(self.name, lower=self.start, upper=self.end)
+        if self.size > 1:
+            lower = np.repeat(self.start, self.size)
+            upper = np.repeat(self.end, self.size)
+        else:
+            lower, upper = self.start, self.end
+        return pm.Uniform(self.name, lower=lower, upper=upper)
+
 
 class TruncNormalPrior(BasePrior):
     """
@@ -127,4 +134,11 @@ class TruncNormalPrior(BasePrior):
 
     def to_pymc(self):
         lower, upper = self.trunc_range
-        return pm.TruncatedNormal(self.name, mu=self.mean, sigma=self.stdev, lower=lower, upper=upper)
+        if self.size > 1:
+            lower = np.repeat(self.start, self.size)
+            upper = np.repeat(self.start, self.size)
+        else:
+            lower, upper = self.start, self.end
+        return pm.TruncatedNormal(
+            self.name, mu=self.mean, sigma=self.stdev, lower=lower, upper=upper
+        )

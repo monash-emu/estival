@@ -9,6 +9,8 @@ import numpy as np
 
 from jax import jit, scipy as jsp, numpy as jnp
 
+from summer2.utils import Epoch
+
 from .priors import DistriParam, BasePrior
 
 
@@ -49,12 +51,20 @@ class BaseTarget(ABC):
         return out_target
 
     @abstractmethod
-    def get_evaluator(self, model_times: pd.Index) -> TargetEvaluator:
+    def get_evaluator(self, model_times: pd.Index, epoch: Epoch) -> TargetEvaluator:
         raise NotImplementedError()
 
 
 class TargetEvaluator(ABC):
-    def __init__(self, target: BaseTarget, model_times: pd.Index):
+    def __init__(self, target: BaseTarget, model_times: pd.Index, epoch: Epoch=None):
+
+        if not isinstance(target.data.index, pd.DatetimeIndex):
+            if epoch is not None:
+                model_times = epoch.dti_to_index(model_times)
+        else:
+            if epoch is None:
+                raise Exception("Target data expressed as datetime but no ref_date set for model")
+
         self.target = target.filtered(model_times)
         self.data = self.target.data.to_numpy()
         for da in target._data_attrs:
@@ -72,8 +82,8 @@ class TargetEvaluator(ABC):
 
 
 class NegativeBinomialEvaluator(TargetEvaluator):
-    def __init__(self, target: BaseTarget, model_times: pd.Index):
-        super().__init__(target, model_times)
+    def __init__(self, target: BaseTarget, model_times: pd.Index, epoch: Epoch):
+        super().__init__(target, model_times, epoch)
 
     def evaluate(self, modelled: np.array, parameters: dict) -> float:
         if isinstance(self.target.dispersion_param, BasePrior):
@@ -119,8 +129,8 @@ class NegativeBinomialTarget(BaseTarget):
         else:
             return []
 
-    def get_evaluator(self, model_times: pd.Index) -> TargetEvaluator:
-        return NegativeBinomialEvaluator(self, model_times)
+    def get_evaluator(self, model_times: pd.Index, epoch: Epoch) -> TargetEvaluator:
+        return NegativeBinomialEvaluator(self, model_times, epoch)
 
 
 class BinomialTarget(BaseTarget):
@@ -140,13 +150,13 @@ class BinomialTarget(BaseTarget):
         self._data_attrs = ["sample_sizes"]
         self.sample_sizes = sample_sizes
 
-    def get_evaluator(self, model_times: pd.Index) -> TargetEvaluator:
-        return BinomialEvaluator(self, model_times)
+    def get_evaluator(self, model_times: pd.Index, epoch: Epoch) -> TargetEvaluator:
+        return BinomialEvaluator(self, model_times, epoch)
 
 
 class BinomialEvaluator(TargetEvaluator):
-    def __init__(self, target: BaseTarget, model_times: pd.Index):
-        super().__init__(target, model_times)
+    def __init__(self, target: BaseTarget, model_times: pd.Index, epoch: Epoch):
+        super().__init__(target, model_times, epoch)
         # Enforce this here so TFP-jax picks the right output types
         self.sample_sizes = self.sample_sizes.astype(float)
 
@@ -193,13 +203,13 @@ class TruncatedNormalTarget(BaseTarget):
         else:
             return []
 
-    def get_evaluator(self, model_times: pd.Index) -> TargetEvaluator:
-        return TruncatedNormalTargetEvaluator(self, model_times)
+    def get_evaluator(self, model_times: pd.Index, epoch: Epoch) -> TargetEvaluator:
+        return TruncatedNormalTargetEvaluator(self, model_times, epoch)
 
 
 class TruncatedNormalTargetEvaluator(TargetEvaluator):
-    def __init__(self, target: TruncatedNormalTarget, model_times: pd.Index):
-        super().__init__(target, model_times)
+    def __init__(self, target: TruncatedNormalTarget, model_times: pd.Index, epoch: Epoch):
+        super().__init__(target, model_times, epoch)
 
     def evaluate(self, modelled: np.array, parameters: dict) -> float:
         if isinstance(self.target.stdev, BasePrior):
@@ -252,13 +262,13 @@ class NormalTarget(BaseTarget):
         else:
             return []
 
-    def get_evaluator(self, model_times: pd.Index) -> TargetEvaluator:
-        return NormalTargetEvaluator(self, model_times)
+    def get_evaluator(self, model_times: pd.Index, epoch: Epoch) -> TargetEvaluator:
+        return NormalTargetEvaluator(self, model_times, epoch)
 
 
 class NormalTargetEvaluator(TargetEvaluator):
-    def __init__(self, target: BaseTarget, model_times: pd.Index):
-        super().__init__(target, model_times)
+    def __init__(self, target: BaseTarget, model_times: pd.Index, epoch: Epoch):
+        super().__init__(target, model_times, epoch)
 
     def evaluate(self, modelled: np.array, parameters: dict) -> float:
         if isinstance(self.target.stdev, BasePrior):
@@ -276,8 +286,8 @@ class NormalTargetEvaluator(TargetEvaluator):
 
 
 class CustomTargetEvaluator(TargetEvaluator):
-    def __init__(self, target, model_times, eval_func):
-        super().__init__(target, model_times)
+    def __init__(self, target, model_times, eval_func, epoch):
+        super().__init__(target, model_times, epoch)
         self._eval_func = eval_func
 
     def evaluate(self, modelled, parameters):
@@ -310,8 +320,8 @@ class CustomTarget(BaseTarget):
         super().__init__(name, data, weight, time_weights)
         self.eval_func = eval_func
 
-    def get_evaluator(self, model_times):
-        return CustomTargetEvaluator(self, model_times, self.eval_func)
+    def get_evaluator(self, model_times, epoch: Epoch):
+        return CustomTargetEvaluator(self, model_times, self.eval_func, epoch)
 
 
 def get_target_sd(data: pd.Series) -> float:
