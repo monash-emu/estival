@@ -4,6 +4,9 @@ import pytensor.tensor as pt
 
 from estival.model import BayesianCompartmentalModel
 
+import cloudpickle
+
+
 def get_wrapped_ll(bcm: BayesianCompartmentalModel):
     """_summary_
 
@@ -13,6 +16,14 @@ def get_wrapped_ll(bcm: BayesianCompartmentalModel):
     Returns:
         A wrapped pytensor op for use in pymc
     """
+
+    prior_types = []
+    for k, prior in bcm.priors.items():
+        if prior.size > 1:
+            prior_types.append(pt.dvector)
+        else:
+            prior_types.append(pt.dscalar)
+
     # define a pytensor Op for our likelihood function
     class BCMLogLike(pt.Op):
         """
@@ -22,7 +33,11 @@ def get_wrapped_ll(bcm: BayesianCompartmentalModel):
         log-likelihood)
         """
 
-        itypes = [pt.dscalar] * len(bcm.priors)#[pt.dvector]  # expects a vector of parameter values when called
+        itypes = prior_types
+
+        # [pt.dscalar] * len(
+        #    bcm.priors
+        # )  # [pt.dvector]  # expects a vector of parameter values when called
         otypes = [pt.dscalar]  # outputs a single scalar value (the log likelihood)
 
         def __init__(self):
@@ -41,19 +56,20 @@ def get_wrapped_ll(bcm: BayesianCompartmentalModel):
 
         def perform(self, node, inputs, outputs):
             params = inputs
-            kwargs = {k:params[i] for i,k in enumerate(self.bcm.priors)}
+            kwargs = {k: params[i] for i, k in enumerate(self.bcm.priors)}
 
             # call the log-likelihood function
             logl = self.bcm.loglikelihood(**kwargs)
 
             outputs[0][0] = np.array(logl)  # output the log-likelihood
-            
+
     return BCMLogLike
+
 
 def use_model(bcm: BayesianCompartmentalModel, include_ll=False) -> list:
     """Use a given BayesianCompartmentalModel for pymc sampling
     This should be called inside a model context like so
-    
+
     with pm.Model():
         variables = use_model(bcm)
         pm.sample(step=[pm.DEMetropolis(variables)])
@@ -79,5 +95,13 @@ def use_model(bcm: BayesianCompartmentalModel, include_ll=False) -> list:
 
     if include_ll:
         pm.Deterministic("loglike", pot)
-    
+
     return pymc_priors
+
+
+def run_map(bcm_pkl, ival):
+    bcm = cloudpickle.loads(bcm_pkl)
+    with pm.Model() as model:
+        variables = use_model(bcm, include_ll=False)
+        map_est = pm.find_MAP(ival, include_transformed=False, progressbar=False)
+    return map_est
