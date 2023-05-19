@@ -15,3 +15,5 @@ Include tensorflow-probability(jax) for more (and better tested) stats modules
 - 0.2.4
 Bugfix (vector priors were not exported to pymc correctly)
 Add Epoch support to allow DatetimeIndex targets
+- 0.2.5
+Bugfix for BinomialTarget (wasn't indexing modelled data)
