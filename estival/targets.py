@@ -56,8 +56,7 @@ class BaseTarget(ABC):
 
 
 class TargetEvaluator(ABC):
-    def __init__(self, target: BaseTarget, model_times: pd.Index, epoch: Epoch=None):
-
+    def __init__(self, target: BaseTarget, model_times: pd.Index, epoch: Epoch = None):
         if not isinstance(target.data.index, pd.DatetimeIndex):
             if epoch is not None:
                 model_times = epoch.dti_to_index(model_times)
@@ -146,9 +145,10 @@ class BinomialTarget(BaseTarget):
         weight: float = 1.0,
         time_weights: pd.Series = None,
     ):
-        super().__init__(name, data, weight, time_weights)
+        # Enforce floats for data and sample_sizes so TFP doesn't complain later
+        super().__init__(name, data.astype(float), weight, time_weights)
         self._data_attrs = ["sample_sizes"]
-        self.sample_sizes = sample_sizes
+        self.sample_sizes = sample_sizes.astype(float)
 
     def get_evaluator(self, model_times: pd.Index, epoch: Epoch) -> TargetEvaluator:
         return BinomialEvaluator(self, model_times, epoch)
@@ -166,7 +166,7 @@ class BinomialEvaluator(TargetEvaluator):
         # use a binomial (n, p) where n is the sample size observed in the data and p the modelled proportion
         # We then evaluate the binomial density for k, which represents the numerator observed in the data
         n = self.target.sample_sizes
-        p = modelled
+        p = modelled[self.index]
         k = self.target.data * n
 
         bdist = tfp.distributions.Binomial(total_count=n, probs=p)
