@@ -17,3 +17,5 @@ Bugfix (vector priors were not exported to pymc correctly)
 Add Epoch support to allow DatetimeIndex targets
 - 0.2.5
 Bugfix for BinomialTarget (wasn't indexing modelled data)
+- 0.2.6
+Bugfix (reference index for models without date returned incorrect type)

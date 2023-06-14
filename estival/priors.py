@@ -58,8 +58,8 @@ class BetaPrior(BasePrior):
     A beta distributed prior.
     """
 
-    def __init__(self, name: str, mean: float, ci: Tuple[float, float]):
-        super().__init__(name)
+    def __init__(self, name: str, mean: float, ci: Tuple[float, float], size=1):
+        super().__init__(name, size)
         self.mean = mean
         self.ci = ci
         self.name = name
@@ -120,8 +120,10 @@ class TruncNormalPrior(BasePrior):
     A prior with a truncated normal distribution.
     """
 
-    def __init__(self, name: str, mean: float, stdev: float, trunc_range: Tuple[float, float]):
-        super().__init__(name)
+    def __init__(
+        self, name: str, mean: float, stdev: float, trunc_range: Tuple[float, float], size=1
+    ):
+        super().__init__(name, size)
         self.mean, self.stdev = mean, stdev
         self.trunc_range = tuple(trunc_range)
         self.distri_params = {
@@ -135,10 +137,8 @@ class TruncNormalPrior(BasePrior):
     def to_pymc(self):
         lower, upper = self.trunc_range
         if self.size > 1:
-            lower = np.repeat(self.start, self.size)
-            upper = np.repeat(self.start, self.size)
-        else:
-            lower, upper = self.start, self.end
+            lower = np.repeat(lower, self.size)
+            upper = np.repeat(upper, self.size)
         return pm.TruncatedNormal(
             self.name, mu=self.mean, sigma=self.stdev, lower=lower, upper=upper
         )

@@ -8,6 +8,11 @@ from jax import jit
 import pandas as pd
 
 
+@dataclass
+class ResultsData:
+    derived_outputs: pd.DataFrame
+
+
 class BayesianCompartmentalModel:
     def __init__(
         self,
@@ -18,6 +23,9 @@ class BayesianCompartmentalModel:
         extra_ll=None,
     ):
         self.model = model
+
+        self._model_parameters = model.get_input_parameters()
+
         self.parameters = parameters
         self.targets = {t.name: t for t in targets}
 
@@ -26,11 +34,11 @@ class BayesianCompartmentalModel:
         self.priors = {p.name: p for p in priors}
 
         self._ref_idx = self.model._get_ref_idx()
+        if not isinstance(self._ref_idx, pd.Index):
+            self._ref_idx = pd.Index(self._ref_idx)
         self.epoch = self.model.get_epoch()
 
         self.loglikelihood = self._build_logll_func(extra_ll)
-
-
 
     def _build_logll_func(self, extra_ll=None):
         model_params = self.model.get_input_parameters()
@@ -62,6 +70,10 @@ class BayesianCompartmentalModel:
 
             return logdens
 
+        logll.__doc__ = f"""logll({', '.join([k for k in self.priors])})\n
+        Run the model for a given set of parameters, and 
+        return the loglikelihood of its outputs, including any values from extrall"""
+
         return logll
 
     def logprior(self, **parameters):
@@ -73,19 +85,35 @@ class BayesianCompartmentalModel:
     def logposterior(self, **parameters):
         return self.loglikelihood(**parameters) + self.logprior(**parameters)
 
-    def run(self, parameters):
-        results = self._full_runner._run_func(parameters)
+    def run(self, parameters: dict) -> ResultsData:
+        """Run the model for a given set of parameters.
+        Note that only parameters specified as priors affect the outputs; other parameters
+        are in-filled from the initial arguments supplied to BayesianCompartmentalModel
+
+        Args:
+            parameters: Dict of parameter key/values (as specified in priors)
+
+        Returns:
+            ResultsData, an extensible container with derived_outputs as a DataFrame
+        """
+        run_params = {k: v for k, v in parameters.items() if k in self._model_parameters}
+        results = self._full_runner._run_func(run_params)
+
         return ResultsData(
             derived_outputs=pd.DataFrame(results["derived_outputs"], index=self._ref_idx)
         )
 
-    def run_jax(self, parameters):
+    def run_jax(self, parameters: dict) -> dict:
+        """Run the jax run function for the model directly with the supplied parameters;
+        meaning bcm.run_jax can be included in JIT calls
+
+        Args:
+            parameters: Dict of parameter key/values (as specified in priors)
+
+        Returns:
+            Results as per the summer2 jax runner
+        """
         return self._full_runner._run_func(parameters)
-
-
-@dataclass
-class ResultsData:
-    derived_outputs: pd.DataFrame
 
 
 def capture_model_kwargs(model: CompartmentalModel, **kwargs) -> dict:
