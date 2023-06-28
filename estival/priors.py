@@ -114,6 +114,9 @@ class UniformPrior(BasePrior):
             lower, upper = self.start, self.end
         return pm.Uniform(self.name, lower=lower, upper=upper)
 
+    def __repr__(self):
+        return f"UniformPrior bounds: {self.bounds()}"
+
 
 class TruncNormalPrior(BasePrior):
     """
@@ -142,3 +145,6 @@ class TruncNormalPrior(BasePrior):
         return pm.TruncatedNormal(
             self.name, mu=self.mean, sigma=self.stdev, lower=lower, upper=upper
         )
+
+    def __repr__(self):
+        return f"TruncNormalPrior mean: {self.mean}, stdev: {self.stdev}, bounds: {self.bounds()}"

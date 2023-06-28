@@ -19,3 +19,9 @@ Add Epoch support to allow DatetimeIndex targets
 Bugfix for BinomialTarget (wasn't indexing modelled data)
 - 0.2.6
 Bugfix (reference index for models without date returned incorrect type)
+- 0.3.0
+Note - breaking changes!
+Remove old AuTuMN MCMC implementation
+Move nevergrad/pymc -> wrappers
+Expand likelihood output tools
+Include parallelism framework

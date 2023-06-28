@@ -11,6 +11,7 @@ import pandas as pd
 @dataclass
 class ResultsData:
     derived_outputs: pd.DataFrame
+    extras: dict
 
 
 class BayesianCompartmentalModel:
@@ -38,9 +39,9 @@ class BayesianCompartmentalModel:
             self._ref_idx = pd.Index(self._ref_idx)
         self.epoch = self.model.get_epoch()
 
-        self.loglikelihood = self._build_logll_func(extra_ll)
+        self._build_logll_funcs(extra_ll)
 
-    def _build_logll_func(self, extra_ll=None):
+    def _build_logll_funcs(self, extra_ll=None):
         model_params = self.model.get_input_parameters()
         dyn_params = list(model_params.intersection(set(self.priors)))
         self.model.set_derived_outputs_whitelist(list(self.targets))
@@ -74,7 +75,21 @@ class BayesianCompartmentalModel:
         Run the model for a given set of parameters, and 
         return the loglikelihood of its outputs, including any values from extrall"""
 
-        return logll
+        @jit
+        def logll_multi(modelled_do, **kwargs):
+            out_ll = {}
+
+            for tk, te in self._evaluators.items():
+                modelled = modelled_do[tk]
+                out_ll[tk] = te(modelled, kwargs)
+
+            if extra_ll:
+                out_ll["extra_ll"] = extra_ll(kwargs)
+
+            return out_ll
+
+        self._logll_multi = logll_multi
+        self.loglikelihood = logll
 
     def logprior(self, **parameters):
         lp = 0.0
@@ -85,7 +100,7 @@ class BayesianCompartmentalModel:
     def logposterior(self, **parameters):
         return self.loglikelihood(**parameters) + self.logprior(**parameters)
 
-    def run(self, parameters: dict) -> ResultsData:
+    def run(self, parameters: dict, include_extras=False) -> ResultsData:
         """Run the model for a given set of parameters.
         Note that only parameters specified as priors affect the outputs; other parameters
         are in-filled from the initial arguments supplied to BayesianCompartmentalModel
@@ -99,8 +114,19 @@ class BayesianCompartmentalModel:
         run_params = {k: v for k, v in parameters.items() if k in self._model_parameters}
         results = self._full_runner._run_func(run_params)
 
+        if include_extras:
+            extras = {}
+            ll_components = self._logll_multi(results["derived_outputs"], **parameters)
+            extras["ll_components"] = ll_components
+            extras["loglikelihood"] = sum(ll_components.values())
+            extras["logprior"] = self.logprior(**parameters)
+            extras["logposterior"] = extras["logprior"] + extras["loglikelihood"]
+        else:
+            extras = {}
+
         return ResultsData(
-            derived_outputs=pd.DataFrame(results["derived_outputs"], index=self._ref_idx)
+            derived_outputs=pd.DataFrame(results["derived_outputs"], index=self._ref_idx),
+            extras=extras,
         )
 
     def run_jax(self, parameters: dict) -> dict:
