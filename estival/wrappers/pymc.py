@@ -91,10 +91,11 @@ def use_model(bcm: BayesianCompartmentalModel, include_ll=False) -> list:
     invars = [pt.as_tensor_variable(v) for v in pymc_priors]
 
     # use a Potential to "call" the Op and include it in the logp computation
-    pot = pm.Potential("loglikelihood", logl(*invars))
+    ll = logl(*invars)
+    pot = pm.Potential("loglikelihood", ll)
 
     if include_ll:
-        pm.Deterministic("loglike", pot)
+        pm.Deterministic("loglike", ll)
 
     return pymc_priors
 

@@ -2,11 +2,10 @@ from typing import Callable
 
 from concurrent import futures
 from multiprocessing import cpu_count
+
 import numpy as np
 
 from estival.model import BayesianCompartmentalModel
-from estival.utils import negative
-
 
 # This is optional, just be silent if it's not installed...
 try:
@@ -18,7 +17,9 @@ except:
 def get_instrumentation(priors, suggested=None, init_method="midpoint"):
     idict = {}
 
-    suggested = suggested or {}
+    if suggested is None:
+        suggested = {}
+
     starting_points = {}
     for pk, p in priors.items():
         if sug_pt := suggested.get(pk):
@@ -67,7 +68,7 @@ def optimize_model(
     invert_function=True,
 ):
     if not num_workers:
-        num_workers = cpu_count()
+        num_workers = int(cpu_count() / 2)
 
     instrum = get_instrumentation(bcm.priors, suggested, init_method)
 
@@ -87,3 +88,16 @@ def optimize_model(
     min_func = obj_function
     optimizer = opt_class(parametrization=instrum, budget=budget, num_workers=num_workers)
     return OptRunner(optimizer, min_func, num_workers)
+
+
+def negative(f, *args, **kwargs):
+    """Wrap a positive function such that a minimizable version is returned instead
+
+    Args:
+        f: The callable to wrap
+    """
+
+    def _reflected(*args, **kwargs):
+        return float(0.0 - f(*args, **kwargs))
+
+    return _reflected
