@@ -25,3 +25,5 @@ Remove old AuTuMN MCMC implementation
 Move nevergrad/pymc -> wrappers
 Expand likelihood output tools
 Include parallelism framework
+- 0.3.1
+Bugfix (submodules not properly exported)
