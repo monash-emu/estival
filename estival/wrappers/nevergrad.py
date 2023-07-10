@@ -22,7 +22,7 @@ def get_instrumentation(priors, suggested=None, init_method="midpoint"):
 
     starting_points = {}
     for pk, p in priors.items():
-        if sug_pt := suggested.get(pk):
+        if (sug_pt := suggested.get(pk)) is not None:
             starting_points[pk] = sug_pt
         else:
             if init_method == "midpoint":

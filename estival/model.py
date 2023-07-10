@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from summer2 import CompartmentalModel
 
 from jax import jit
+import numpy as np
 
 import pandas as pd
 
@@ -46,10 +47,14 @@ class BayesianCompartmentalModel:
         dyn_params = list(model_params.intersection(set(self.priors)))
         self.model.set_derived_outputs_whitelist(list(self.targets))
 
-        self._ll_runner = self.model.get_runner(self.parameters, dyn_params)
+        self._ll_runner = self.model.get_runner(
+            self.parameters, dyn_params, include_full_outputs=False
+        )
 
         self.model.set_derived_outputs_whitelist([])
-        self._full_runner = self.model.get_runner(self.parameters, dyn_params)
+        self._full_runner = self.model.get_runner(
+            self.parameters, dyn_params, include_full_outputs=False
+        )
 
         self._evaluators = {}
         for k, t in self.targets.items():
@@ -94,7 +99,7 @@ class BayesianCompartmentalModel:
     def logprior(self, **parameters):
         lp = 0.0
         for k, p in self.priors.items():
-            lp += p.logpdf(parameters[k])
+            lp += np.sum(p.logpdf(parameters[k]))
         return lp
 
     def logposterior(self, **parameters):

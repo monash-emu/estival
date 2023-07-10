@@ -51,6 +51,7 @@ def map_parallel(run_func: Callable, input_iterator: Iterable, n_workers: int = 
         n_workers, initializer=process_init_cloudpickle, initargs=(cloudpickle.dumps(run_func),)
     ) as pool:
         pres = pool.map(generic_cpkl_worker, input_iterator)
-        pool.close()
-        pool.join()
+        # +++ We seem to get intermittent hanging here, and the context manager _should_ handle cleanup...
+        # pool.close()
+        # pool.join()
     return pres
