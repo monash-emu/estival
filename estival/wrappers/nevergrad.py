@@ -52,8 +52,11 @@ class OptRunner:
     def minimize(self, budget):
         cur_ask = self.optimizer.num_ask
         self.optimizer.budget = cur_ask + budget
-        with futures.ThreadPoolExecutor(max_workers=self.num_workers) as executor:
-            rec = self.optimizer.minimize(self.min_func, executor=executor)
+        if self.num_workers > 1:
+            with futures.ThreadPoolExecutor(max_workers=self.num_workers) as executor:
+                rec = self.optimizer.minimize(self.min_func, executor=executor)
+        else:
+            rec = self.optimizer.minimize(self.min_func)
         return rec
 
 

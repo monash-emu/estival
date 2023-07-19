@@ -27,3 +27,8 @@ Expand likelihood output tools
 Include parallelism framework
 - 0.3.1
 Bugfix (submodules not properly exported)
+- 0.3.2
+SampleIterator tools (better support for shaped priors)
+Attempted map_parallel bugfix
+- 0.3.3
+Requirements fix (update summerepi2)

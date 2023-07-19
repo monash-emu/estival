@@ -46,7 +46,7 @@ class BasePrior(ABC):
         return self.rv.logpdf(x)
 
     def __repr__(self):
-        return f"{type(self)} {self.name}"
+        return f"{self.__class__.__name__} {self.name}"
 
 
 # Union type for hierarchical/dispersion parameters
@@ -115,7 +115,7 @@ class UniformPrior(BasePrior):
         return pm.Uniform(self.name, lower=lower, upper=upper)
 
     def __repr__(self):
-        return f"UniformPrior bounds: {self.bounds()}"
+        return f"{super().__repr__()} {{bounds: {self.bounds()}}}"
 
 
 class TruncNormalPrior(BasePrior):
@@ -147,4 +147,4 @@ class TruncNormalPrior(BasePrior):
         )
 
     def __repr__(self):
-        return f"TruncNormalPrior mean: {self.mean}, stdev: {self.stdev}, bounds: {self.bounds()}"
+        return f"{super().__repr__()} {{mean: {self.mean}, stdev: {self.stdev}, bounds: {self.bounds()}}}"
