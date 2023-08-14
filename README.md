@@ -32,3 +32,5 @@ SampleIterator tools (better support for shaped priors)
 Attempted map_parallel bugfix
 - 0.3.3
 Requirements fix (update summerepi2)
+- 0.3.4
+Swap modelled/target data in Normal and TruncatedNormal targets (incorrect results previously)
