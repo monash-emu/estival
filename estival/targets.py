@@ -220,18 +220,21 @@ class TruncatedNormalTargetEvaluator(TargetEvaluator):
         from tensorflow_probability.substrates.jax import distributions as tfpd
 
         tdist = tfpd.TruncatedNormal(
-            loc=self.data, scale=sd, low=self.target.trunc_range[0], high=self.target.trunc_range[1]
+            loc=modelled[self.index],
+            scale=sd,
+            low=self.target.trunc_range[0],
+            high=self.target.trunc_range[1],
         )
 
-        distri_params = {
-            "scale": sd,
-            "a": (self.target.trunc_range[0] - self.data) / sd,
-            "b": (self.target.trunc_range[1] - self.data) / sd,
-        }
+        # distri_params = {
+        #    "scale": sd,
+        #    "a": (self.target.trunc_range[0] - self.data) / sd,
+        #    "b": (self.target.trunc_range[1] - self.data) / sd,
+        # }
 
         # ll = jsp.stats.truncnorm.logpdf(modelled[self.index], loc=self.data, **distri_params)
 
-        ll = tdist.log_prob(modelled[self.index])
+        ll = tdist.log_prob(self.data)
 
         if self.time_weights is not None:
             ll = ll * self.time_weights
@@ -276,7 +279,7 @@ class NormalTargetEvaluator(TargetEvaluator):
         else:
             sd = self.target.stdev
 
-        ll = jsp.stats.norm.logpdf(modelled[self.index], loc=self.data, scale=sd)
+        ll = jsp.stats.norm.logpdf(self.data, loc=modelled[self.index], scale=sd)
 
         if self.time_weights is not None:
             ll = ll * self.time_weights
