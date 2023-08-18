@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict
 from dataclasses import dataclass
 
 from summer2 import CompartmentalModel
@@ -7,6 +7,10 @@ from jax import jit
 import numpy as np
 
 import pandas as pd
+
+from .targets import BaseTarget
+from .priors import BasePrior
+from .utils.sample import SampleTypes, SampledPriorsManager
 
 
 @dataclass
@@ -29,11 +33,11 @@ class BayesianCompartmentalModel:
         self._model_parameters = model.get_input_parameters()
 
         self.parameters = parameters
-        self.targets = {t.name: t for t in targets}
+        self.targets: Dict[str, BaseTarget] = _named_list_to_dict(targets)
 
         for t in targets:
             priors = priors + t.get_priors()
-        self.priors = {p.name: p for p in priors}
+        self.priors: Dict[str, BasePrior] = _named_list_to_dict(priors)
 
         self._ref_idx = self.model._get_ref_idx()
         if not isinstance(self._ref_idx, pd.Index):
@@ -42,10 +46,25 @@ class BayesianCompartmentalModel:
 
         self._build_logll_funcs(extra_ll)
 
+        self.sample = SampledPriorsManager(self.priors)
+
+    def _construct_targets(self, targets: list) -> Dict[str, BaseTarget]:
+        tdict = {}
+
+        for t in targets:
+            if t.name in tdict:
+                raise ValueError("Duplicate target name", t.name)
+            else:
+                tdict[t.name] = t
+
+        return tdict
+
     def _build_logll_funcs(self, extra_ll=None):
         model_params = self.model.get_input_parameters()
         dyn_params = list(model_params.intersection(set(self.priors)))
-        self.model.set_derived_outputs_whitelist(list(self.targets))
+        self.model.set_derived_outputs_whitelist(
+            list(set([t.model_key for t in self.targets.values()]))
+        )
 
         self._ll_runner = self.model.get_runner(
             self.parameters, dyn_params, include_full_outputs=False
@@ -67,9 +86,11 @@ class BayesianCompartmentalModel:
             res = self._ll_runner._run_func(dict_args)["derived_outputs"]
 
             logdens = 0.0
-            for tk, te in self._evaluators.items():
-                modelled = res[tk]
-                logdens += te(modelled, kwargs)
+            for tname, target in self.targets.items():
+                model_key = target.model_key
+                evaluator = self._evaluators[tname]
+                modelled = res[model_key]
+                logdens += evaluator(modelled, kwargs)
 
             if extra_ll:
                 logdens += extra_ll(kwargs)
@@ -84,9 +105,11 @@ class BayesianCompartmentalModel:
         def logll_multi(modelled_do, **kwargs):
             out_ll = {}
 
-            for tk, te in self._evaluators.items():
-                modelled = modelled_do[tk]
-                out_ll[tk] = te(modelled, kwargs)
+            for tname, target in self.targets.items():
+                model_key = target.model_key
+                evaluator = self._evaluators[tname]
+                modelled = modelled_do[model_key]
+                out_ll[tname] = evaluator(modelled, kwargs)
 
             if extra_ll:
                 out_ll["extra_ll"] = extra_ll(kwargs)
@@ -150,3 +173,15 @@ class BayesianCompartmentalModel:
 def capture_model_kwargs(model: CompartmentalModel, **kwargs) -> dict:
     model_params = model.get_input_parameters()
     return {k: kwargs[k] for k in kwargs if k in model_params}
+
+
+def _named_list_to_dict(in_list: list) -> dict:
+    tdict = {}
+
+    for t in in_list:
+        if t.name in tdict:
+            raise ValueError("Duplicate name in input list", t.name)
+        else:
+            tdict[t.name] = t
+
+    return tdict
