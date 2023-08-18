@@ -20,11 +20,19 @@ class BaseTarget(ABC):
     _data_attrs: List = []
 
     def __init__(
-        self, name: str, data: pd.Series, weight: float = 1.0, time_weights: pd.Series = None
+        self,
+        name: str,
+        data: pd.Series,
+        weight: float = 1.0,
+        time_weights: pd.Series = None,
+        model_key: str = None,
     ):
         # Make things easier for calibration by sanitizing the data here
         self.name = name
         self.data = data
+        if model_key is None:
+            model_key = name
+        self.model_key = model_key
 
         # Should do some validation on this - ie make sure indices match data
         # if time_weights is None:
@@ -118,8 +126,9 @@ class NegativeBinomialTarget(BaseTarget):
         dispersion_param: DistriParam,
         weight: float = 1.0,
         time_weights: pd.Series = None,
+        model_key: str = None,
     ):
-        super().__init__(name, data, weight, time_weights)
+        super().__init__(name, data, weight, time_weights, model_key)
         self.dispersion_param = dispersion_param
 
     def get_priors(self):
@@ -144,9 +153,10 @@ class BinomialTarget(BaseTarget):
         sample_sizes: pd.Series,
         weight: float = 1.0,
         time_weights: pd.Series = None,
+        model_key: str = None,
     ):
         # Enforce floats for data and sample_sizes so TFP doesn't complain later
-        super().__init__(name, data.astype(float), weight, time_weights)
+        super().__init__(name, data.astype(float), weight, time_weights, model_key)
         self._data_attrs = ["sample_sizes"]
         self.sample_sizes = sample_sizes.astype(float)
 
@@ -192,8 +202,9 @@ class TruncatedNormalTarget(BaseTarget):
         stdev: DistriParam,
         weight: float = 1.0,
         time_weights: pd.Series = None,
+        model_key: str = None,
     ):
-        super().__init__(name, data, weight, time_weights)
+        super().__init__(name, data, weight, time_weights, model_key)
         self.trunc_range = trunc_range
         self.stdev = stdev
 
@@ -255,8 +266,9 @@ class NormalTarget(BaseTarget):
         stdev: DistriParam,
         weight: float = 1.0,
         time_weights: pd.Series = None,
+        model_key: str = None,
     ):
-        super().__init__(name, data, weight, time_weights)
+        super().__init__(name, data, weight, time_weights, model_key)
         self.stdev = stdev
 
     def get_priors(self):
@@ -301,7 +313,7 @@ class CustomTargetEvaluator(TargetEvaluator):
 
 
 class CustomTarget(BaseTarget):
-    def __init__(self, name, data, eval_func, weight=1.0, time_weights=None):
+    def __init__(self, name, data, eval_func, weight=1.0, time_weights=None, model_key: str = None):
         """Build a Target that uses a custom evaluation function.
         Indexing and multiplication by weight factor is handled automatically,
         but time_weights are not (see below)
@@ -320,7 +332,7 @@ class CustomTarget(BaseTarget):
             weight (optional): Scales resulting output
             time_weights (optional): Passed to eval_func - Series with index matching data
         """
-        super().__init__(name, data, weight, time_weights)
+        super().__init__(name, data, weight, time_weights, model_key)
         self.eval_func = eval_func
 
     def get_evaluator(self, model_times, epoch: Epoch):
