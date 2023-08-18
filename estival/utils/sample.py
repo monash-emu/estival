@@ -31,7 +31,7 @@ def ppf(sample, priors: PriorDict):
 
 def cdf(sample, priors: PriorDict):
     def cdf_op(sample, prior):
-        return prior.rv.cdf(sample)
+        return prior.cdf(sample)
 
     return _process_samples_for_priors(sample, priors, cdf_op)
 
