@@ -1,4 +1,4 @@
-from typing import Tuple, Union
+from typing import Tuple, Union, Dict
 from abc import ABC
 
 import numpy as np
@@ -18,10 +18,10 @@ class BasePrior(ABC):
         self.size = size
 
     def bounds(self, ci=1.0) -> Tuple[float, float]:
-        return self.rv.interval(ci)
+        return self._rv.interval(ci)
 
     def ppf(self, q):
-        """Probability Percentage Function at q
+        """Probability Percentage Function at q (Inverse CDF)
         Defaults to using the underlying scipy distribution function
 
         Args:
@@ -31,7 +31,31 @@ class BasePrior(ABC):
             typeof(q): The ppf values
         """
 
-        return self.rv.ppf(q)
+        return self._rv.ppf(q)
+
+    def cdf(self, x):
+        """Cumulative Distribution Function at x
+        Defaults to using the underlying scipy distribution function
+
+        Args:
+            x: Value (float or arraylike) at which to evaluate cdf
+
+        Returns:
+            typeof(x): The cdf values
+        """
+        return self._rv.cdf(x)
+
+    def pdf(self, x):
+        """Probability Density Function at x
+        Defaults to using the underlying scipy distribution function
+
+        Args:
+            x: Value (float or arraylike) at which to evaluate pdf
+
+        Returns:
+            typeof(x): The pdf values
+        """
+        return self._rv.pdf(x)
 
     def logpdf(self, x):
         """Log Probability Density Function at x
@@ -43,14 +67,20 @@ class BasePrior(ABC):
         Returns:
             typeof(x): The logpdf values
         """
-        return self.rv.logpdf(x)
+        return self._rv.logpdf(x)
 
     def __repr__(self):
         return f"{self.__class__.__name__} {self.name}"
 
+    def to_pymc(self):
+        raise NotImplementedError()
+
 
 # Union type for hierarchical/dispersion parameters
 DistriParam = Union[float, BasePrior]
+
+# Dict type used by BayesianCompartmentalModel
+PriorDict = Dict[str, BasePrior]
 
 
 class BetaPrior(BasePrior):
@@ -64,10 +94,10 @@ class BetaPrior(BasePrior):
         self.ci = ci
         self.name = name
         self._find_distri_params()
-        self.rv = stats.beta(**self.distri_params)
+        self._rv = stats.beta(**self.distri_params)
 
     def bounds(self, ci=1.0) -> Tuple[float, float]:
-        ret = self.rv.interval(ci)
+        ret = self._rv.interval(ci)
         if isinstance(ci, float):
             return ret[0][0], ret[1][0]
         else:
@@ -103,7 +133,7 @@ class UniformPrior(BasePrior):
         super().__init__(name)
         self.start, self.end = domain
         self.distri_params = {"loc": self.start, "scale": self.end - self.start}
-        self.rv = stats.uniform(**self.distri_params)
+        self._rv = stats.uniform(**self.distri_params)
         self.size = size
 
     def to_pymc(self):
@@ -135,7 +165,7 @@ class TruncNormalPrior(BasePrior):
             "a": (trunc_range[0] - mean) / stdev,
             "b": (trunc_range[1] - mean) / stdev,
         }
-        self.rv = stats.truncnorm(**self.distri_params)
+        self._rv = stats.truncnorm(**self.distri_params)
 
     def to_pymc(self):
         lower, upper = self.trunc_range
@@ -148,3 +178,79 @@ class TruncNormalPrior(BasePrior):
 
     def __repr__(self):
         return f"{super().__repr__()} {{mean: {self.mean}, stdev: {self.stdev}, bounds: {self.bounds()}}}"
+
+
+class GammaPrior(BasePrior):
+    """A gamma distributed prior"""
+
+    def __init__(self, name: str, shape: float, scale: float, size: int = 1):
+        super().__init__(name, size)
+        self.shape = shape
+        self.scale = scale
+
+        self._rv = stats.gamma(shape, scale=scale)
+
+    def to_pymc(self):
+        alpha = self.shape
+        beta = 1.0 / self.scale
+        if self.size > 1:
+            alpha = np.repeat(alpha, self.size)
+            beta = np.repeat(beta, self.size)
+
+        return pm.Gamma(self.name, alpha=alpha, beta=beta)
+
+    @classmethod
+    def from_mode(
+        cls, name: str, mode: float, upper_ci: float, size: int = 1, tol=1e-6, max_eval=8
+    ):
+        def evaluate_gamma(params):
+            k, theta = params[0], params[1]
+            interval = stats.gamma.interval(0.99, k, scale=theta)
+            eval_mode = (k - 1.0) * theta
+            return np.abs(eval_mode - mode) + np.abs(interval[-1] - upper_ci)
+
+        x = np.array((1.0, 1.0))
+        cur_eval = 0
+        loss = np.inf
+        while (loss > tol) and (cur_eval < max_eval):
+            res = minimize(
+                evaluate_gamma, x, bounds=[(1e-8, np.inf), (1e-8, np.inf)], method="Nelder-Mead"
+            )
+            loss = evaluate_gamma(res.x) / upper_ci
+            x = res.x
+            cur_eval += 1
+
+        if loss > tol:
+            raise RuntimeWarning(
+                f"Loss of {loss} exceeds specified tolerance {tol}, parameters may be impossible"
+            )
+
+        return cls(name, x[0], x[1], size)
+
+    @classmethod
+    def from_mean(
+        cls, name: str, mean: float, upper_ci: float, size: int = 1, tol=1e-6, max_eval=8
+    ):
+        def evaluate_gamma(params):
+            k, theta = params[0], params[1]
+            interval = stats.gamma.interval(0.99, k, scale=theta)
+            eval_mean = stats.gamma.mean(k, scale=theta)
+            return np.abs(eval_mean - mean) + np.abs(interval[-1] - upper_ci)
+
+        x = np.array((1.0, 1.0))
+        cur_eval = 0
+        loss = np.inf
+        while (loss > tol) and (cur_eval < max_eval):
+            res = minimize(
+                evaluate_gamma, x, bounds=[(1e-8, np.inf), (1e-8, np.inf)], method="Nelder-Mead"
+            )
+            loss = evaluate_gamma(res.x) / upper_ci
+            x = res.x
+            cur_eval += 1
+
+        if loss > tol:
+            raise RuntimeWarning(
+                f"Loss of {loss} exceeds specified tolerance {tol}, parameters may be impossible"
+            )
+
+        return cls(name, x[0], x[1], size)
