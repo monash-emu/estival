@@ -34,3 +34,7 @@ Attempted map_parallel bugfix
 Requirements fix (update summerepi2)
 - 0.3.4
 Swap modelled/target data in Normal and TruncatedNormal targets (incorrect results previously)
+- 0.3.5
+Add sampling utils
+Add gamma prior
+Support multiple targets for each derived output
