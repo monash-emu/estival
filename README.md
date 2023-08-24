@@ -38,3 +38,7 @@ Swap modelled/target data in Normal and TruncatedNormal targets (incorrect resul
 Add sampling utils
 Add gamma prior
 Support multiple targets for each derived output
+- 0.3.6
+Minor bugfix to 0.3.5
+- 0.3.7
+Reimplement BetaPrior, and get_series and finite_bounds for priors

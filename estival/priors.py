@@ -4,6 +4,7 @@ from abc import ABC
 import numpy as np
 from scipy import stats
 from scipy.optimize import minimize
+import pandas as pd
 
 # pymc is optional - just be silent on failed import
 try:
@@ -19,6 +20,25 @@ class BasePrior(ABC):
 
     def bounds(self, ci=1.0) -> Tuple[float, float]:
         return self._rv.interval(ci)
+
+    def finite_bounds(self, ci=0.99) -> Tuple[float, float]:
+        """Return guaranteed finite bounds, each of the lower and upper bounds
+        will be either its full extremum (if finite), or the bound specified by
+        the supplied confidence interval
+
+        Args:
+            ci: Confidence interval for alternate bounds
+
+        Returns:
+            Tuple of lower, upper
+        """
+        lower, upper = self.bounds(1.0)
+        cbounds = self.bounds(ci)
+        if np.isinf(lower):
+            lower = cbounds[0]
+        if np.isinf(upper):
+            upper = cbounds[1]
+        return lower, upper
 
     def ppf(self, q):
         """Probability Percentage Function at q (Inverse CDF)
@@ -69,6 +89,17 @@ class BasePrior(ABC):
         """
         return self._rv.logpdf(x)
 
+    def get_series(self, func_name, ci=0.99, slen=101):
+        x = np.linspace(*self.finite_bounds(), slen)
+        y = getattr(self._rv, func_name)(x)
+        return pd.Series(y, x, name=func_name)
+
+    def _get_pymc_shape(self):
+        if self.size == 1:
+            return None
+        else:
+            return self.size
+
     def __repr__(self):
         return f"{self.__class__.__name__} {self.name}"
 
@@ -88,25 +119,21 @@ class BetaPrior(BasePrior):
     A beta distributed prior.
     """
 
-    def __init__(self, name: str, mean: float, ci: Tuple[float, float], size=1):
+    def __init__(self, name: str, a: float, b: float, size=1):
         super().__init__(name, size)
-        self.mean = mean
-        self.ci = ci
-        self.name = name
-        self._find_distri_params()
-        self._rv = stats.beta(**self.distri_params)
+        self.a = a
+        self.b = b
+        self.distri_params = {"a": a, "b": b}
+        self._rv = stats.beta(a, b)
 
     def bounds(self, ci=1.0) -> Tuple[float, float]:
-        ret = self._rv.interval(ci)
-        if isinstance(ci, float):
-            return ret[0][0], ret[1][0]
-        else:
-            return ret
+        rv_int = self._rv.interval(ci)
+        return rv_int[0][0], rv_int[1][0]
 
-    def _find_distri_params(self, ci_width=0.95):
-        ci = self.ci
-        mean = self.mean
-
+    @classmethod
+    def from_mean_and_ci(
+        cls, name: str, mean: float, ci: Tuple[float, float], ci_width=0.95, size=1
+    ):
         assert len(ci) == 2 and ci[1] > ci[0] and 0.0 < ci_width < 1.0
         percentile_low = (1.0 - ci_width) / 2.0
         percentile_up = 1.0 - percentile_low
@@ -121,7 +148,11 @@ class BetaPrior(BasePrior):
         sol = minimize(distance_to_minimise, [1.0], bounds=[(0.0, None)], tol=1.0e-32)
         best_a = sol.x
         best_b = best_a * (1.0 - mean) / mean
-        self.distri_params = {"a": best_a, "b": best_b}
+
+        return cls(name, best_a, best_b, size)
+
+    def to_pymc(self):
+        return pm.Beta(alpha=self.a, beta=self.b, shape=self._get_pymc_shape())
 
 
 class UniformPrior(BasePrior):
@@ -137,12 +168,8 @@ class UniformPrior(BasePrior):
         self.size = size
 
     def to_pymc(self):
-        if self.size > 1:
-            lower = np.repeat(self.start, self.size)
-            upper = np.repeat(self.end, self.size)
-        else:
-            lower, upper = self.start, self.end
-        return pm.Uniform(self.name, lower=lower, upper=upper)
+        lower, upper = self.start, self.end
+        return pm.Uniform(self.name, lower=lower, upper=upper, shape=self._get_pymc_shape())
 
     def __repr__(self):
         return f"{super().__repr__()} {{bounds: {self.bounds()}}}"
@@ -160,8 +187,8 @@ class TruncNormalPrior(BasePrior):
         self.mean, self.stdev = mean, stdev
         self.trunc_range = tuple(trunc_range)
         self.distri_params = {
-            "loc": self.mean,
-            "scale": self.stdev,
+            "loc": mean,
+            "scale": stdev,
             "a": (trunc_range[0] - mean) / stdev,
             "b": (trunc_range[1] - mean) / stdev,
         }
@@ -169,11 +196,13 @@ class TruncNormalPrior(BasePrior):
 
     def to_pymc(self):
         lower, upper = self.trunc_range
-        if self.size > 1:
-            lower = np.repeat(lower, self.size)
-            upper = np.repeat(upper, self.size)
         return pm.TruncatedNormal(
-            self.name, mu=self.mean, sigma=self.stdev, lower=lower, upper=upper
+            self.name,
+            mu=self.mean,
+            sigma=self.stdev,
+            lower=lower,
+            upper=upper,
+            shape=self._get_pymc_shape(),
         )
 
     def __repr__(self):
@@ -188,20 +217,26 @@ class GammaPrior(BasePrior):
         self.shape = shape
         self.scale = scale
 
+        self.distri_params = {"shape": self.shape, "scale": self.scale}
+
         self._rv = stats.gamma(shape, scale=scale)
 
     def to_pymc(self):
         alpha = self.shape
         beta = 1.0 / self.scale
-        if self.size > 1:
-            alpha = np.repeat(alpha, self.size)
-            beta = np.repeat(beta, self.size)
 
-        return pm.Gamma(self.name, alpha=alpha, beta=beta)
+        return pm.Gamma(self.name, alpha=alpha, beta=beta, shape=self._get_pymc_shape())
 
     @classmethod
     def from_mode(
-        cls, name: str, mode: float, upper_ci: float, size: int = 1, tol=1e-6, max_eval=8
+        cls,
+        name: str,
+        mode: float,
+        upper_ci: float,
+        size: int = 1,
+        tol=1e-6,
+        max_eval=8,
+        warn=False,
     ):
         def evaluate_gamma(params):
             k, theta = params[0], params[1]
@@ -221,15 +256,23 @@ class GammaPrior(BasePrior):
             cur_eval += 1
 
         if loss > tol:
-            raise RuntimeWarning(
-                f"Loss of {loss} exceeds specified tolerance {tol}, parameters may be impossible"
-            )
+            if warn:
+                raise RuntimeWarning(
+                    f"Loss of {loss} exceeds specified tolerance {tol}, parameters may be impossible"
+                )
 
         return cls(name, x[0], x[1], size)
 
     @classmethod
     def from_mean(
-        cls, name: str, mean: float, upper_ci: float, size: int = 1, tol=1e-6, max_eval=8
+        cls,
+        name: str,
+        mean: float,
+        upper_ci: float,
+        size: int = 1,
+        tol=1e-6,
+        max_eval=8,
+        warn=False,
     ):
         def evaluate_gamma(params):
             k, theta = params[0], params[1]
@@ -249,8 +292,9 @@ class GammaPrior(BasePrior):
             cur_eval += 1
 
         if loss > tol:
-            raise RuntimeWarning(
-                f"Loss of {loss} exceeds specified tolerance {tol}, parameters may be impossible"
-            )
+            if warn:
+                raise RuntimeWarning(
+                    f"Loss of {loss} exceeds specified tolerance {tol}, parameters may be impossible"
+                )
 
         return cls(name, x[0], x[1], size)
