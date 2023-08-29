@@ -44,3 +44,5 @@ Minor bugfix to 0.3.5
 Reimplement BetaPrior, and get_series and finite_bounds for priors
 - 0.3.8
 Fix BetaPrior.to_pymc, add testing
+- 0.3.9
+Bugfix (BetaPrior .from_ method injected arrays into params)

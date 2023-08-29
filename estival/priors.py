@@ -127,8 +127,8 @@ class BetaPrior(BasePrior):
 
     def __init__(self, name: str, a: float, b: float, size=1):
         super().__init__(name, size)
-        self.a = a
-        self.b = b
+        self.a = float(a)
+        self.b = float(b)
         self.distri_params = {"a": a, "b": b}
         self._rv = stats.beta(a, b)
 
@@ -151,7 +151,7 @@ class BetaPrior(BasePrior):
         best_a = sol.x
         best_b = best_a * (1.0 - mean) / mean
 
-        return cls(name, best_a, best_b, size)
+        return cls(name, best_a[0], best_b[0], size)
 
     def to_pymc(self):
         return pm.Beta(self.name, alpha=self.a, beta=self.b, shape=self._get_pymc_shape())
@@ -228,8 +228,8 @@ class GammaPrior(BasePrior):
 
     def __init__(self, name: str, shape: float, scale: float, size: int = 1):
         super().__init__(name, size)
-        self.shape = shape
-        self.scale = scale
+        self.shape = float(shape)
+        self.scale = float(scale)
 
         self.distri_params = {"shape": self.shape, "scale": self.scale}
 
