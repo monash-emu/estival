@@ -42,3 +42,5 @@ Support multiple targets for each derived output
 Minor bugfix to 0.3.5
 - 0.3.7
 Reimplement BetaPrior, and get_series and finite_bounds for priors
+- 0.3.8
+Fix BetaPrior.to_pymc, add testing
