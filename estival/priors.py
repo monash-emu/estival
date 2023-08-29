@@ -1,4 +1,4 @@
-from typing import Tuple, Union, Dict
+from typing import Any, Tuple, Union, Dict, cast
 from abc import ABC
 
 import numpy as np
@@ -14,6 +14,8 @@ except:
 
 
 class BasePrior(ABC):
+    _rv: stats.distributions.rv_frozen
+
     def __init__(self, name: str, size: int = 1):
         self.name = name
         self.size = size
@@ -90,7 +92,7 @@ class BasePrior(ABC):
         return self._rv.logpdf(x)
 
     def get_series(self, func_name, ci=0.99, slen=101):
-        x = np.linspace(*self.finite_bounds(), slen)
+        x = np.linspace(*self.finite_bounds(ci=ci), slen)
         y = getattr(self._rv, func_name)(x)
         return pd.Series(y, x, name=func_name)
 
@@ -104,6 +106,10 @@ class BasePrior(ABC):
         return f"{self.__class__.__name__} {self.name}"
 
     def to_pymc(self):
+        raise NotImplementedError()
+
+    @classmethod
+    def _get_test(cls):
         raise NotImplementedError()
 
 
@@ -125,10 +131,6 @@ class BetaPrior(BasePrior):
         self.b = b
         self.distri_params = {"a": a, "b": b}
         self._rv = stats.beta(a, b)
-
-    def bounds(self, ci=1.0) -> Tuple[float, float]:
-        rv_int = self._rv.interval(ci)
-        return rv_int[0][0], rv_int[1][0]
 
     @classmethod
     def from_mean_and_ci(
@@ -152,7 +154,11 @@ class BetaPrior(BasePrior):
         return cls(name, best_a, best_b, size)
 
     def to_pymc(self):
-        return pm.Beta(alpha=self.a, beta=self.b, shape=self._get_pymc_shape())
+        return pm.Beta(self.name, alpha=self.a, beta=self.b, shape=self._get_pymc_shape())
+
+    @classmethod
+    def _get_test(cls):
+        return cls("test", 2.0, 5.0)
 
 
 class UniformPrior(BasePrior):
@@ -173,6 +179,10 @@ class UniformPrior(BasePrior):
 
     def __repr__(self):
         return f"{super().__repr__()} {{bounds: {self.bounds()}}}"
+
+    @classmethod
+    def _get_test(cls):
+        return cls("test", (0.0, 1.0))
 
 
 class TruncNormalPrior(BasePrior):
@@ -207,6 +217,10 @@ class TruncNormalPrior(BasePrior):
 
     def __repr__(self):
         return f"{super().__repr__()} {{mean: {self.mean}, stdev: {self.stdev}, bounds: {self.bounds()}}}"
+
+    @classmethod
+    def _get_test(cls):
+        return cls("test", 0.0, 1.0, (0.0, 1.0))
 
 
 class GammaPrior(BasePrior):
@@ -278,6 +292,8 @@ class GammaPrior(BasePrior):
             k, theta = params[0], params[1]
             interval = stats.gamma.interval(0.99, k, scale=theta)
             eval_mean = stats.gamma.mean(k, scale=theta)
+            # Force assumption for static typecheckers
+            eval_mean = cast(float, eval_mean)
             return np.abs(eval_mean - mean) + np.abs(interval[-1] - upper_ci)
 
         x = np.array((1.0, 1.0))
@@ -298,3 +314,7 @@ class GammaPrior(BasePrior):
                 )
 
         return cls(name, x[0], x[1], size)
+
+    @classmethod
+    def _get_test(cls):
+        return cls("test", 1.0, 0.5)
