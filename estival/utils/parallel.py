@@ -1,4 +1,4 @@
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Optional
 
 from multiprocessing import Pool, cpu_count
 
@@ -32,7 +32,7 @@ def generic_cpkl_worker(*args):
     return run_func(*args)
 
 
-def map_parallel(run_func: Callable, input_iterator: Iterable, n_workers: int = None):
+def map_parallel(run_func: Callable, input_iterator: Iterable, n_workers: Optional[int] = None):
     """Map the values of input_iterator over a function run_func, using n_workers parallel workers
 
     Args:
