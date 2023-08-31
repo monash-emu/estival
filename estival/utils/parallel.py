@@ -1,6 +1,8 @@
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, Type
 
-from multiprocessing import Pool, cpu_count
+import multiprocessing as mp
+
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 import cloudpickle
 
@@ -32,26 +34,41 @@ def generic_cpkl_worker(*args):
     return run_func(*args)
 
 
-def map_parallel(run_func: Callable, input_iterator: Iterable, n_workers: Optional[int] = None):
+def map_parallel(
+    run_func: Callable,
+    input_iterator: Iterable,
+    n_workers: Optional[int] = None,
+    mode: Optional[str] = "thread",
+):
     """Map the values of input_iterator over a function run_func, using n_workers parallel workers
 
     Args:
         run_func: The function to call over the mapped inputs
         input_iterator: An iterable containing the values to map
         n_workers: Number of processes used by Pool
+        mode: ProcessExecutor type; either 'thread' or 'process'
 
     Returns:
         A list of values return by run_func
     """
 
     if n_workers is None:
-        n_workers = int(cpu_count() / 2)
+        n_workers = int(mp.cpu_count())
 
-    with Pool(
-        n_workers, initializer=process_init_cloudpickle, initargs=(cloudpickle.dumps(run_func),)
-    ) as pool:
-        pres = pool.map(generic_cpkl_worker, input_iterator)
-        # +++ We seem to get intermittent hanging here, and the context manager _should_ handle cleanup...
-        # pool.close()
-        # pool.join()
+    if mode is None:
+        mode = "thread"
+
+    if mode == "process":
+        with ProcessPoolExecutor(  # type: ignore
+            n_workers, initializer=process_init_cloudpickle, initargs=(cloudpickle.dumps(run_func),)
+        ) as pool:
+            pres = pool.map(generic_cpkl_worker, input_iterator)
+            pres = [p for p in pres]
+    elif mode == "thread":
+        with ThreadPoolExecutor(n_workers) as pool:  # type: ignore
+            pres = pool.map(run_func, input_iterator)
+            pres = [p for p in pres]
+    else:
+        raise ValueError("Mode must be one of ['thread', 'process']")
+
     return pres

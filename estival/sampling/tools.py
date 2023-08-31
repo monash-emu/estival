@@ -1,5 +1,7 @@
 from typing import Tuple, Dict, Optional, Union
 from multiprocessing import cpu_count
+from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 from arviz import InferenceData
@@ -13,6 +15,12 @@ from estival.utils.parallel import map_parallel
 SampleIndex = Tuple[int, int]
 ParamDict = Dict[str, float]
 SampleContainer = Union[pd.DataFrame, "SampleIterator", xarray.Dataset]
+
+
+@dataclass
+class SampledResults:
+    results: pd.DataFrame
+    extras: Optional[pd.DataFrame]
 
 
 def likelihood_extras_for_idata(
@@ -59,24 +67,32 @@ def likelihood_extras_for_idata(
 
     extras_df = likelihood_extras_for_samples(accepted_si, bcm, n_workers)
 
-    # Create a DataFrame with the full index of the idata
-    # This has a lot of redundant information, but it's still only a few Mb and
-    # makes lookup _so_ much easier...
-    filled_edf = pd.DataFrame(index=accepted_df.index, columns=extras_df.columns)
+    # Collate this into an array - it's much much faster than dealing with pandas directly
+    tmp_extras = np.empty((len(accepted_df), extras_df.shape[-1]))
 
-    for (chain, draw), accepted_s in accepted_df.iterrows():
+    # This value should never get used - we know something went wrong if the accepted field if it did
+    last_good_sample_idx = "IndexNotSet"
+
+    for i, (idx, accepted_s) in enumerate(accepted_df.iterrows()):
         # Extract the bool from the Series
         accepted = accepted_s["accepted"]
         # Update the index if this sample is accepted - otherwise we'll
         # store the previous known good sample (ala MCMC)
         if accepted:
-            last_good_sample_idx = (chain, draw)
-        filled_edf.loc[(chain, draw)] = extras_df.loc[last_good_sample_idx]
+            last_good_sample_idx = idx
+        tmp_extras[i] = extras_df.loc[last_good_sample_idx]
+
+    # Create a DataFrame with the full index of the idata
+    # This has a lot of redundant information, but it's still only a few Mb and
+    # makes lookup _so_ much easier...
+    filled_edf = pd.DataFrame(
+        index=accepted_df.index, columns=extras_df.columns, data=tmp_extras, dtype=float
+    )
 
     return filled_edf
 
 
-def _extras_df_from_pres(pres, is_full_data=False) -> pd.DataFrame:
+def _extras_df_from_pres(pres, is_full_data=False, index_names=("chain", "draw")) -> pd.DataFrame:
     extras_dict = {
         "logposterior": {},
         "logprior": {},
@@ -97,13 +113,16 @@ def _extras_df_from_pres(pres, is_full_data=False) -> pd.DataFrame:
             extras_dict["ll_" + k][idx] = float(v)
 
     extras_df = pd.DataFrame(extras_dict)
-    extras_df.index = extras_df.index.set_names(("chain", "draw"))  # pyright: ignore
+    extras_df.index = extras_df.index.set_names(index_names)  # pyright: ignore
 
     return extras_df
 
 
 def likelihood_extras_for_samples(
-    samples: SampleContainer, bcm: BayesianCompartmentalModel, n_workers: Optional[int] = None
+    samples: SampleContainer,
+    bcm: BayesianCompartmentalModel,
+    n_workers: Optional[int] = None,
+    exec_mode: Optional[str] = None,
 ) -> pd.DataFrame:
     def get_sample_extras(sample_params: Tuple[SampleIndex, ParamDict]) -> Tuple[SampleIndex, dict]:
         """Run the BCM for a given set of parameters, and return its extras dictionary
@@ -122,7 +141,7 @@ def likelihood_extras_for_samples(
 
     samples = validate_samplecontainer(samples)
 
-    pres = map_parallel(get_sample_extras, samples.iterrows(), n_workers)
+    pres = map_parallel(get_sample_extras, samples.iterrows(), n_workers, mode=exec_mode)
 
     return _extras_df_from_pres(pres, False)
 
@@ -132,7 +151,8 @@ def model_results_for_samples(
     bcm: BayesianCompartmentalModel,
     include_extras: bool = False,
     n_workers: Optional[int] = None,
-) -> Union[pd.DataFrame, Tuple[pd.DataFrame, pd.DataFrame]]:
+    exec_mode: Optional[str] = None,
+) -> SampledResults:
     def get_model_results(
         sample_params: Tuple[SampleIndex, ParamDict]
     ) -> Tuple[SampleIndex, ResultsData]:
@@ -152,15 +172,53 @@ def model_results_for_samples(
 
     samples = validate_samplecontainer(samples)
 
-    pres = map_parallel(get_model_results, samples.iterrows(), n_workers)
+    pres = map_parallel(get_model_results, samples.iterrows(), n_workers, mode=exec_mode)
 
     df = pd.concat([p[1].derived_outputs for p in pres], keys=[p[0] for p in pres])
-    df: pd.DataFrame = df.sort_index().unstack(level=(0, 1))  # type: ignore
-    if include_extras:
-        extras_df: pd.DataFrame = _extras_df_from_pres(pres, True).sort_index()  # type:ignore
-        return df, extras_df
+
+    if isinstance(samples.index, pd.MultiIndex):
+        levels = samples.index.names
+        unstack_levels = list(range(len(levels)))
     else:
-        return df
+        unstack_levels = (0,)
+        if hasattr(samples.index, "name"):
+            name = samples.index.name or "sample"  # type: ignore
+        else:
+            name = "sample"
+        levels = (name,)
+
+    df: pd.DataFrame = df.sort_index().unstack(level=unstack_levels)  # type: ignore
+    df.columns.set_names(["variable", *levels], inplace=True)
+    df.index.set_names("time", inplace=True)
+
+    if include_extras:
+        extras_df: pd.DataFrame = _extras_df_from_pres(
+            pres, True, index_names=levels
+        ).sort_index()  # type:ignore
+        return SampledResults(df, extras_df)
+    else:
+        return SampledResults(df, None)
+
+
+def quantiles_for_results(results_df: pd.DataFrame, quantiles: Tuple[float]) -> pd.DataFrame:
+    """Summary
+
+    Args:
+        results_df: DataFrame with layout equivalent to model_results_for_samples output
+        quantiles: Quantiles to compute [0.0,1.0]
+
+    Returns:
+        pd.DataFrame: DataFrame with time as index and [variable, quantile] as columns
+    """
+    columns = pd.MultiIndex.from_product(
+        (results_df.columns.levels[0], quantiles), names=["variable", "quantile"]  # type: ignore
+    )
+    udf = pd.DataFrame(index=results_df.index, columns=columns)
+
+    for variable in results_df.columns.levels[0]:  # type: ignore
+        udf[variable] = results_df[variable].quantile(quantiles, axis=1).T  # type: ignore
+
+    return udf
 
 
 class SampleIterator:
@@ -214,15 +272,23 @@ def xarray_to_sampleiterator(in_data: xarray.Dataset):
     if list(in_data.dims) == ["sample"]:
         index = in_data.sample.to_index()
         data_t = in_data.transpose("sample", ...)
+        n_idxdim = 1
     elif list(in_data.dims) == ["chain", "draw"]:
         index = in_data.coords.to_index()
         data_t = in_data.transpose("chain", "draw", ...)
+        n_idxdim = 2
     else:
         raise KeyError("Incompatible dimensions ")
 
     components = {}
     for dv in in_data.data_vars:
-        components[dv] = data_t[dv].data
+        dvar = data_t[dv]
+
+        sample_shape = int(np.prod(dvar.data.shape[:n_idxdim]))
+        var_shape = dvar.data.shape[n_idxdim:]
+        final_shape = [sample_shape] + list(var_shape)
+
+        components[dv] = dvar.data.reshape(final_shape)
 
     si = SampleIterator(components, index=index)
     return si
