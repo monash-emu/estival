@@ -48,3 +48,7 @@ Fix BetaPrior.to_pymc, add testing
 Bugfix (BetaPrior .from_ method injected arrays into params)
 - 0.4.0
 Improved sampling tools
+- 0.4.1
+Extend sampling tools, more options for map_parallel
+- 0.4.2b
+Experimental release using expanded transform for uniform priors

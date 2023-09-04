@@ -10,7 +10,6 @@ import pandas as pd
 
 from .targets import BaseTarget
 from .priors import BasePrior
-from .utils.sample import SampleTypes, SampledPriorsManager
 
 
 @dataclass
@@ -45,6 +44,8 @@ class BayesianCompartmentalModel:
         self.epoch = self.model.get_epoch()
 
         self._build_logll_funcs(extra_ll)
+
+        from .utils.sample import SampledPriorsManager
 
         self.sample = SampledPriorsManager(self.priors)
 
