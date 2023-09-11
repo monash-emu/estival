@@ -31,7 +31,10 @@ class _PriorStub:
 
 
 def likelihood_extras_for_idata(
-    idata: InferenceData, bcm: BayesianCompartmentalModel, num_workers: Optional[int] = None
+    idata: InferenceData,
+    bcm: BayesianCompartmentalModel,
+    num_workers: Optional[int] = None,
+    exec_mode: str = "thread",
 ) -> pd.DataFrame:
     """Calculate the likelihood extras (ll,lprior,lpost + per-target) for all
     samples in supplied InferenceData, returning a DataFrame.
@@ -68,7 +71,7 @@ def likelihood_extras_for_idata(
     # Get the likelihood extras for all accepted samples - this spins up a multiprocessing pool
     # pres = sample_likelihood_extras_mp(bcm, accepted_samples_df, n_workers)
 
-    extras_df = likelihood_extras_for_samples(accepted_si, bcm, num_workers)
+    extras_df = likelihood_extras_for_samples(accepted_si, bcm, num_workers, exec_mode=exec_mode)
 
     # Collate this into an array - it's much much faster than dealing with pandas directly
     tmp_extras = np.empty((len(accepted_df), extras_df.shape[-1]))
@@ -125,7 +128,7 @@ def likelihood_extras_for_samples(
     samples: SampleContainer,
     bcm: BayesianCompartmentalModel,
     num_workers: Optional[int] = None,
-    exec_mode: Optional[str] = None,
+    exec_mode: Optional[str] = "thread",
 ) -> pd.DataFrame:
     def get_sample_extras(sample_params: Tuple[SampleIndex, ParamDict]) -> Tuple[SampleIndex, dict]:
         """Run the BCM for a given set of parameters, and return its extras dictionary
@@ -165,7 +168,7 @@ def model_results_for_samples(
     bcm: BayesianCompartmentalModel,
     include_extras: bool = False,
     num_workers: Optional[int] = None,
-    exec_mode: Optional[str] = None,
+    exec_mode: Optional[str] = "thread",
 ) -> SampledResults:
     def get_model_results(
         sample_params: Tuple[SampleIndex, ParamDict]

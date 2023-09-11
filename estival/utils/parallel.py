@@ -38,15 +38,17 @@ def map_parallel(
     run_func: Callable,
     input_iterator: Iterable,
     n_workers: Optional[int] = None,
-    mode: Optional[str] = "thread",
+    mode: Optional[str] = "process",
 ):
     """Map the values of input_iterator over a function run_func, using n_workers parallel workers
+    Defaults to ProcessPoolExecutor; for non-Python-bound tasks, 'thread'
 
     Args:
         run_func: The function to call over the mapped inputs
         input_iterator: An iterable containing the values to map
         n_workers: Number of processes used by Pool
-        mode: ProcessExecutor type; either 'thread' or 'process'
+        mode: ProcessExecutor type; either 'thread' or 'process'.  'process' is required for
+              non-thread-safe tasks, while 'thread' is usually faster for small jax-heavy tasks
 
     Returns:
         A list of values return by run_func

@@ -52,3 +52,5 @@ Improved sampling tools
 Extend sampling tools, more options for map_parallel
 - 0.4.2b
 Experimental release using expanded transform for uniform priors
+- 0.4.3
+Better exec_mode defaults for parallel helper functions

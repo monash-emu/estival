@@ -172,21 +172,30 @@ class UniformPrior(BasePrior):
         self.distri_params = {"loc": self.start, "scale": self.end - self.start}
         self._rv = stats.uniform(**self.distri_params)
         self.size = size
-        self._pymc_transform_eps_scale = 0.1
+        self._pymc_transform_eps_scale = 0.0
 
     def to_pymc(self):
         lower, upper = self.start, self.end
         eps = self._pymc_transform_eps_scale * (upper - lower)
-        interval_transform = pm.distributions.transforms.Interval(
-            lower=lower - eps, upper=upper + eps
-        )
-        return pm.Uniform(
-            self.name,
-            lower=lower,
-            upper=upper,
-            transform=interval_transform,
-            shape=self._get_pymc_shape(),
-        )
+
+        if self._pymc_transform_eps_scale != 0.0:
+            interval_transform = pm.distributions.transforms.Interval(
+                lower=lower - eps, upper=upper + eps
+            )
+            return pm.Uniform(
+                self.name,
+                lower=lower,
+                upper=upper,
+                transform=interval_transform,
+                shape=self._get_pymc_shape(),
+            )
+        else:
+            return pm.Uniform(
+                self.name,
+                lower=lower,
+                upper=upper,
+                shape=self._get_pymc_shape(),
+            )
 
     def __repr__(self):
         return f"{super().__repr__()} {{bounds: {self.bounds()}}}"

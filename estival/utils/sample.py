@@ -161,6 +161,8 @@ def convert_sample_type(sample, priors, target_type: str):
         sample = esamptools.validate_samplecontainer(sample)
         if target_type == SampleTypes.LIST_OF_DICTS:
             return [v for _, v in sample.iterrows()]  # type: ignore
+        elif target_type == SampleTypes.PANDAS:
+            return pd.DataFrame(sample.components, index=sample.index)
 
     raise TypeError(
         "Unsupported combination of input type and target type", type(sample), target_type

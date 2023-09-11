@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "estival"
-version = "0.4.2b"
+version = "0.4.3"
 readme = "README.md"
 license = "BSD-2-Clause"
 homepage = "https://github.com/monash-emu/estival"
