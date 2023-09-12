@@ -332,12 +332,14 @@ class SampleIterator:
 
 
 def xarray_to_sampleiterator(in_data: xarray.Dataset):
-    if list(in_data.dims) == ["sample"]:
+    if list(in_data.dims)[0] == "sample":
         index = in_data.sample.to_index()
         data_t = in_data.transpose("sample", ...)
         n_idxdim = 1
-    elif list(in_data.dims) == ["chain", "draw"]:
-        index = in_data.coords.to_index()
+    elif list(in_data.dims)[:2] == ["chain", "draw"]:
+        index = pd.MultiIndex.from_product(
+            [in_data.coords["chain"].to_index(), in_data.coords["draw"].to_index()]
+        )
         data_t = in_data.transpose("chain", "draw", ...)
         n_idxdim = 2
     else:

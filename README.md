@@ -54,3 +54,5 @@ Extend sampling tools, more options for map_parallel
 Experimental release using expanded transform for uniform priors
 - 0.4.3
 Better exec_mode defaults for parallel helper functions
+- 0.4.4
+Fix issues with xarray converting array parameters
