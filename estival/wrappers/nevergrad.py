@@ -35,6 +35,10 @@ def get_instrumentation(priors, suggested=None, init_method="midpoint"):
 
     for pk, p in priors.items():
         lower, upper = p.bounds()
+        if np.isinf(lower):
+            lower = None
+        if np.isinf(upper):
+            upper = None
         if p.size == 1:
             idict[pk] = ng.p.Scalar(init=starting_points[pk], lower=lower, upper=upper)
         else:

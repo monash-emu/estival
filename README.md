@@ -56,3 +56,5 @@ Experimental release using expanded transform for uniform priors
 Better exec_mode defaults for parallel helper functions
 - 0.4.4
 Fix issues with xarray converting array parameters
+- 0.4.5
+Fix nevergrad wrapper issue with infinite support priors
