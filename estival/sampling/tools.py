@@ -166,7 +166,7 @@ def likelihood_extras_for_samples(
 def model_results_for_samples(
     samples: SampleContainer,
     bcm: BayesianCompartmentalModel,
-    include_extras: bool = False,
+    include_extras: bool = True,
     num_workers: Optional[int] = None,
     exec_mode: Optional[str] = "thread",
 ) -> SampledResults:

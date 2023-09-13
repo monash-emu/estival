@@ -129,7 +129,7 @@ class BayesianCompartmentalModel:
     def logposterior(self, **parameters):
         return self.loglikelihood(**parameters) + self.logprior(**parameters)
 
-    def run(self, parameters: dict, include_extras=False) -> ResultsData:
+    def run(self, parameters: dict, include_extras=True) -> ResultsData:
         """Run the model for a given set of parameters.
         Note that only parameters specified as priors affect the outputs; other parameters
         are in-filled from the initial arguments supplied to BayesianCompartmentalModel
