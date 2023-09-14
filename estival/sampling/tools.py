@@ -1,12 +1,11 @@
-from inspect import istraceback
 from typing import Tuple, Dict, Optional, Union
 from multiprocessing import cpu_count
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
 from arviz import InferenceData
 import numpy as np
-from pandas.core.frame import dataclasses_to_dicts
 
 import xarray
 
@@ -383,3 +382,19 @@ def validate_samplecontainer(in_data: SampleContainer) -> Union[SampleIterator, 
         return _lod_to_si(in_data)
     else:
         raise TypeError("Unsupported type", in_data)
+
+
+def load_all_from_hdf(in_file: Union[Path, str]) -> Dict[str, pd.DataFrame]:
+    """Load all groups from a pytables HDF, and return as a dictionary
+
+    Args:
+        in_file: Path to HDF file
+
+    Returns:
+        Dictionary whose keys are groups, and values are DataFrames of loaded data
+    """
+    store = pd.HDFStore(in_file)
+    groups = list(store)
+    out_groups = {group.strip("/"): store[group] for group in groups}
+    store.close()
+    return out_groups
