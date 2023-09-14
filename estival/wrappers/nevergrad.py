@@ -86,7 +86,7 @@ def optimize_model(
         return float_wrapper
 
     if obj_function is None:
-        obj_function = bcm.loglikelihood
+        obj_function = bcm.logposterior
     if invert_function:
         obj_function = negative(obj_function)
     else:
