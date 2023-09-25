@@ -3,6 +3,7 @@ from typing import List, Union
 import numpy as np
 import pandas as pd
 from scipy.stats import qmc
+from scipy.spatial.distance import cdist
 
 from estival.priors import PriorDict
 from estival.sampling import tools as esamptools
@@ -102,6 +103,11 @@ def _process_samples_for_priors(sample, priors: PriorDict, op_func):
     elif isinstance(sample, list):
         assert all([isinstance(subsample, dict) for subsample in sample])
         return [_process_samples_for_priors(subsample, priors, op_func) for subsample in sample]
+    elif isinstance(sample, esamptools.SampleIterator):
+        new_components = {k: op_func(v, priors[k]) for k, v in sample.components.items()}
+        return esamptools.SampleIterator(new_components, sample.index)
+    else:
+        raise TypeError("Unsupported sample type")
 
 
 def convert_sample_type(sample, priors, target_type: str):
@@ -114,6 +120,19 @@ def convert_sample_type(sample, priors, target_type: str):
     if target_type == SampleTypes.SAMPLEITERATOR:
         if isinstance(sample, np.ndarray):
             return esamptools.SampleIterator.from_array(sample, priors)
+        if isinstance(sample, list):
+            ref_sample = sample[0]
+            if isinstance(ref_sample, tuple):
+                if isinstance(ref_sample[1], dict):
+                    idsd = {k: v for k, v in sample}
+                    idx = pd.Index([k for k, v in sample])
+                    out = convert_sample_type([v for k, v in sample], priors, "sample")
+                    out.set_index(idx)
+                    return out
+                else:
+                    raise TypeError("Unsupported type", sample)
+            elif isinstance(ref_sample, dict):
+                return _lod_to_si(sample)
         else:
             return esamptools.validate_samplecontainer(sample)
 
@@ -162,8 +181,9 @@ def convert_sample_type(sample, priors, target_type: str):
         if target_type == SampleTypes.LIST_OF_DICTS:
             return [v for _, v in sample.iterrows()]  # type: ignore
         elif target_type == SampleTypes.PANDAS:
-            return pd.DataFrame(sample.components, index=sample.index)
-
+            return pd.DataFrame(sample.convert("list_of_dicts"), index=sample.index)
+        elif target_type == SampleTypes.ARRAY:
+            return sample.to_array()
     raise TypeError(
         "Unsupported combination of input type and target type", type(sample), target_type
     )
@@ -200,28 +220,34 @@ class SampledPriorsManager:
     def cdf(self, sample, ret_type=SampleTypes.INPUT):
         return convert_sample_type(cdf(sample, self.priors), self.priors, ret_type)
 
-    def convert(self, sample, ret_type):
+    def convert(self, sample, ret_type=SampleTypes.SAMPLEITERATOR):
         return convert_sample_type(sample, self.priors, ret_type)
 
-    def lhs(self, n_samples: int, out_type="sample", clamp=0.99):
+    def distance_matrix(self, samples, norm=True):
+        # Euclidean distance of samples in normalized prior density space
+        cdf_samples = self.cdf(samples, "array")
+        dist = cdist(cdf_samples, cdf_samples)  # type: ignore
+        max_dist = np.sqrt(len(self.priors))
+        if norm:
+            dist = dist / max_dist
+        return dist
+
+    def _uniform_to_ci(self, samples, ci, out_type):
+        ci_offset = (1.0 - ci) * 0.5
+        samples = ci_offset + (ci * samples)
+        resampled = self.ppf(samples)
+        return self.convert(resampled, out_type)
+
+    def lhs(self, n_samples: int, out_type="sample", ci=0.99):
         lhs = qmc.LatinHypercube(self.size_info.tot_size)
         samples = lhs.random(n_samples)
-        clamp_offset = (1.0 - clamp) * 0.5
-        samples = np.clip(samples, clamp_offset, 1.0 - clamp_offset)
-        resampled = self.ppf(samples)
-        return self.convert(resampled, out_type)
+        return self._uniform_to_ci(samples, ci, out_type)
 
-    def sobol(self, n_samples: int, out_type="sample", clamp=0.99):
+    def sobol(self, n_samples: int, out_type="sample", ci=0.99):
         sobol = qmc.Sobol(self.size_info.tot_size)
         samples = sobol.random(n_samples)
-        clamp_offset = (1.0 - clamp) * 0.5
-        samples = np.clip(samples, clamp_offset, 1.0 - clamp_offset)
-        resampled = self.ppf(samples)
-        return self.convert(resampled, out_type)
+        return self._uniform_to_ci(samples, ci, out_type)
 
-    def uniform(self, n_samples: int, out_type="sample", clamp=0.99):
+    def uniform(self, n_samples: int, out_type="sample", ci=0.99):
         samples = np.random.uniform(size=(n_samples, self.size_info.tot_size))
-        clamp_offset = (1.0 - clamp) * 0.5
-        samples = np.clip(samples, clamp_offset, 1.0 - clamp_offset)
-        resampled = self.ppf(samples)
-        return self.convert(resampled, out_type)
+        return self._uniform_to_ci(samples, ci, out_type)

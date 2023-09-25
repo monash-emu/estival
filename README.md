@@ -58,3 +58,5 @@ Better exec_mode defaults for parallel helper functions
 Fix issues with xarray converting array parameters
 - 0.4.5
 Fix nevergrad wrapper issue with infinite support priors
+- 0.4.8
+Improved ergonomics and sample type support

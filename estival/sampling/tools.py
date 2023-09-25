@@ -1,3 +1,4 @@
+from types import ClassMethodDescriptorType
 from typing import Tuple, Dict, Optional, Union
 from multiprocessing import cpu_count
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ import xarray
 
 from estival.model import BayesianCompartmentalModel, ResultsData
 from estival.utils.parallel import map_parallel
-from estival.utils.sample import convert_sample_type, get_prior_sizeinfo, _lod_to_si
+from estival.utils.sample import convert_sample_type, get_prior_sizeinfo, _lod_to_si, SampleTypes
 
 SampleIndex = Tuple[int, int]
 ParamDict = Dict[str, float]
@@ -144,7 +145,9 @@ def likelihood_extras_for_samples(
         res = bcm.run(params, include_extras=True)
         return idx, res.extras
 
-    samples = validate_samplecontainer(samples)
+    samples = bcm.sample.convert(samples)  # type: ignore
+
+    # samples = validate_samplecontainer(samples)
 
     pres = map_parallel(get_sample_extras, samples.iterrows(), num_workers, mode=exec_mode)
 
@@ -186,7 +189,8 @@ def model_results_for_samples(
         res = bcm.run(params, include_extras=include_extras)
         return idx, res
 
-    samples = validate_samplecontainer(samples)
+    # samples = validate_samplecontainer(samples)
+    samples = bcm.sample.convert(samples)  # type: ignore
 
     pres = map_parallel(get_model_results, samples.iterrows(), num_workers, mode=exec_mode)
 
@@ -254,18 +258,22 @@ class SampleIterator:
     def __init__(self, components: dict, index=None):
         self.components = components
         self.clen = self._calc_component_length()
+
         if index is None:
-            self.index = pd.RangeIndex(self.clen, name="sample")
-        else:
-            assert (
-                idxlen := len(index)
-            ) == self.clen, f"Index length {idxlen} not equal to component length {self.clen}"
-            self.index = index
+            index = pd.RangeIndex(self.clen, name="sample")
+
+        self.set_index(index)
+
+        self._priors_stub = self._build_priorsize_table()
+
+    def set_index(self, index: pd.Index):
+        assert (
+            idxlen := len(index)
+        ) == self.clen, f"Index length {idxlen} not equal to component length {self.clen}"
+        self.index = index
         self._idxidx = pd.Series(index=self.index, data=range(len(self.index)))
 
         self.iloc = IndexGetter(self._get_by_iloc)
-
-        self._priors_stub = self._build_priorsize_table()
 
     def _calc_component_length(self) -> int:
         clen = -1
@@ -315,7 +323,10 @@ class SampleIterator:
         else:
             for k, v in self.components.items():
                 out[k] = v[idx]
-            return out
+            return SampleIterator(out, index=self.index[idx])
+
+    def _repr_html_(self) -> str:
+        return "SampleIterator" + self.convert("pandas")._repr_html_()  # type: ignore
 
     def _get_by_iloc(self, key):
         return self[self.index[key]]
@@ -328,6 +339,49 @@ class SampleIterator:
         size_info = get_prior_sizeinfo(priors)
         components = {k: in_array[:, size_info.offsets[i]] for i, k in enumerate(priors)}
         return cls(components)
+
+    def to_array(self):
+        si = self
+        sinfo = get_prior_sizeinfo(si._priors_stub)
+        out = np.empty((si.clen, sinfo.tot_size))
+        for i, (k, p) in enumerate(si.components.items()):
+            size, offset = sinfo.sizes[i], sinfo.offsets[i]
+            out[:, offset] = p
+        return out
+
+    @classmethod
+    def read_hdf5(cls, file):
+        import h5py
+
+        f = h5py.File(file, "r")
+        if f["index"].attrs["multi"] == True:
+            index = pd.MultiIndex.from_arrays(f["index"][...].T, names=f["index"].attrs["names"])
+        else:
+            index = pd.Index(f["index"][...], name=f["index"].attrs["name"])
+        si = cls({k: f["variables"][k][...] for k in f.attrs["components"]}, index=index)
+        f.close()
+        return si
+
+    def to_hdf5(self, file):
+        import h5py
+
+        si = self
+        f = h5py.File(file, "w")
+        for k, v in si.components.items():
+            f.create_dataset(f"variables/{k}", data=v, compression=1)
+
+        if isinstance(si.index, pd.MultiIndex):
+            f.create_dataset("index", data=np.array(si.index.to_list()))
+            f["index"].attrs["names"] = si.index.names
+            f["index"].attrs["multi"] = True
+        else:
+            f.create_dataset("index", data=np.array(si.index.to_list()))
+            f["index"].attrs["name"] = si.index.name
+            f["index"].attrs["multi"] = False
+
+        f.attrs["components"] = list(si.components)
+
+        f.close()
 
 
 def xarray_to_sampleiterator(in_data: xarray.Dataset):

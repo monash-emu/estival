@@ -14,7 +14,7 @@ except:
     pass
 
 
-def get_instrumentation(priors, suggested=None, init_method="midpoint"):
+def get_instrumentation(priors, suggested=None, init_method="midpoint", ci: float = 1.0):
     idict = {}
 
     if suggested is None:
@@ -34,7 +34,7 @@ def get_instrumentation(priors, suggested=None, init_method="midpoint"):
             starting_points[pk] = p.ppf(pp)
 
     for pk, p in priors.items():
-        lower, upper = p.bounds()
+        lower, upper = p.bounds(ci)
         if np.isinf(lower):
             lower = None
         if np.isinf(upper):
@@ -73,11 +73,12 @@ def optimize_model(
     init_method: str = "midpoint",
     obj_function: Callable = None,
     invert_function=True,
+    ci: float = 0.99,
 ):
     if not num_workers:
         num_workers = int(cpu_count() / 2)
 
-    instrum = get_instrumentation(bcm.priors, suggested, init_method)
+    instrum = get_instrumentation(bcm.priors, suggested, init_method, ci)
 
     def as_float(wrapped):
         def float_wrapper(**parameters):
