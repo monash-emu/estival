@@ -257,10 +257,10 @@ class SampleIterator:
 
     def __init__(self, components: dict, index=None):
         self.components = components
-        self.clen = self._calc_component_length()
+        self._clen = self._calc_component_length()
 
         if index is None:
-            index = pd.RangeIndex(self.clen, name="sample")
+            index = pd.RangeIndex(self._clen, name="sample")
 
         self.set_index(index)
 
@@ -269,11 +269,12 @@ class SampleIterator:
     def set_index(self, index: pd.Index):
         assert (
             idxlen := len(index)
-        ) == self.clen, f"Index length {idxlen} not equal to component length {self.clen}"
+        ) == self._clen, f"Index length {idxlen} not equal to component length {self._clen}"
         self.index = index
         self._idxidx = pd.Series(index=self.index, data=range(len(self.index)))
 
         self.iloc = IndexGetter(self._get_by_iloc)
+        self.loc = IndexGetter(self._get_by_loc)
 
     def _calc_component_length(self) -> int:
         clen = -1
@@ -300,20 +301,20 @@ class SampleIterator:
         return priors_stub
 
     def __iter__(self):
-        for i in range(self.clen):
+        for i in range(self._clen):
             out = {}
             for k, v in self.components.items():
                 out[k] = v[i]
             yield out
 
     def iterrows(self):
-        for i in range(self.clen):
+        for i in range(self._clen):
             out = {}
             for k, v in self.components.items():
                 out[k] = v[i]
             yield self.index[i], out
 
-    def __getitem__(self, idx):
+    def __getitembak__(self, idx):
         out = {}
         if isinstance(idx, pd.Index):
             data_idx = self._idxidx[idx]
@@ -325,11 +326,26 @@ class SampleIterator:
                 out[k] = v[idx]
             return SampleIterator(out, index=self.index[idx])
 
+    def _subset(self, arr_idx):
+        out = {}
+        for k, v in self.components.items():
+            out[k] = v[arr_idx]
+        result_index = self.index[arr_idx]
+        if isinstance(result_index, pd.Index):
+            return SampleIterator(out, index=self.index[arr_idx])
+        else:
+            return out
+
     def _repr_html_(self) -> str:
         return "SampleIterator" + self.convert("pandas")._repr_html_()  # type: ignore
 
     def _get_by_iloc(self, key):
-        return self[self.index[key]]
+        arr_idx = self._idxidx.iloc[key]
+        return self._subset(arr_idx)
+
+    def _get_by_loc(self, key):
+        arr_idx = self._idxidx.loc[key]
+        return self._subset(arr_idx)
 
     def convert(self, target_type: str):
         return convert_sample_type(self, self._priors_stub, target_type=target_type)
@@ -343,7 +359,7 @@ class SampleIterator:
     def to_array(self):
         si = self
         sinfo = get_prior_sizeinfo(si._priors_stub)
-        out = np.empty((si.clen, sinfo.tot_size))
+        out = np.empty((si._clen, sinfo.tot_size))
         for i, (k, p) in enumerate(si.components.items()):
             size, offset = sinfo.sizes[i], sinfo.offsets[i]
             out[:, offset] = p
