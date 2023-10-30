@@ -60,3 +60,5 @@ Fix issues with xarray converting array parameters
 Fix nevergrad wrapper issue with infinite support priors
 - 0.4.8
 Improved ergonomics and sample type support
+- 0.4.9
+Add BetaTarget

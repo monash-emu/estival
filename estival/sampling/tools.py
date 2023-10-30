@@ -142,7 +142,7 @@ def likelihood_extras_for_samples(
         """
 
         idx, params = sample_params
-        res = bcm.run(params, include_extras=True)
+        res = bcm.run(params, include_extras=True, include_outputs=False)
         return idx, res.extras
 
     samples = bcm.sample.convert(samples)  # type: ignore

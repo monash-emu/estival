@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 from dataclasses import dataclass
 
 from summer2 import CompartmentalModel
@@ -26,6 +26,8 @@ class BayesianCompartmentalModel:
         priors: list,
         targets: list,
         extra_ll=None,
+        backend_args: Optional[dict] = None,
+        whitelist: Optional[list] = None,
     ):
         self.model = model
 
@@ -43,7 +45,9 @@ class BayesianCompartmentalModel:
             self._ref_idx = pd.Index(self._ref_idx)
         self.epoch = self.model.get_epoch()
 
-        self._build_logll_funcs(extra_ll)
+        self._extra_ll = extra_ll
+
+        self._build_logll_funcs(backend_args, whitelist)
 
         from .utils.sample import SampledPriorsManager
 
@@ -60,26 +64,34 @@ class BayesianCompartmentalModel:
 
         return tdict
 
-    def _build_logll_funcs(self, extra_ll=None):
+    def _build_logll_funcs(self, backend_args=None, whitelist=None):
         model_params = self.model.get_input_parameters()
         dyn_params = list(model_params.intersection(set(self.priors)))
         self.model.set_derived_outputs_whitelist(
             list(set([t.model_key for t in self.targets.values()]))
         )
 
+        if backend_args is None:
+            backend_args = {}
+
+        if whitelist is None:
+            whitelist = []
+
         self._ll_runner = self.model.get_runner(
-            self.parameters, dyn_params, include_full_outputs=False
+            self.parameters, dyn_params, include_full_outputs=False, **backend_args
         )
 
-        self.model.set_derived_outputs_whitelist([])
+        self.model.set_derived_outputs_whitelist(whitelist)
         self._full_runner = self.model.get_runner(
-            self.parameters, dyn_params, include_full_outputs=False
+            self.parameters, dyn_params, include_full_outputs=False, **backend_args
         )
 
         self._evaluators = {}
         for k, t in self.targets.items():
             tev = t.get_evaluator(self._ref_idx, self.epoch)
             self._evaluators[k] = tev.evaluate
+
+        extra_ll = self._extra_ll
 
         @jit
         def logll(**kwargs):
@@ -129,7 +141,7 @@ class BayesianCompartmentalModel:
     def logposterior(self, **parameters):
         return self.loglikelihood(**parameters) + self.logprior(**parameters)
 
-    def run(self, parameters: dict, include_extras=True) -> ResultsData:
+    def run(self, parameters: dict, include_extras=True, include_outputs=True) -> ResultsData:
         """Run the model for a given set of parameters.
         Note that only parameters specified as priors affect the outputs; other parameters
         are in-filled from the initial arguments supplied to BayesianCompartmentalModel
@@ -153,8 +165,13 @@ class BayesianCompartmentalModel:
         else:
             extras = {}
 
+        if include_outputs:
+            derived_outputs = pd.DataFrame(results["derived_outputs"], index=self._ref_idx)
+        else:
+            derived_outputs = None
+
         return ResultsData(
-            derived_outputs=pd.DataFrame(results["derived_outputs"], index=self._ref_idx),
+            derived_outputs=derived_outputs,
             extras=extras,
         )
 
