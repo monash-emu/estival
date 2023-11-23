@@ -11,7 +11,7 @@ from jax import jit, scipy as jsp, numpy as jnp
 
 from summer2.utils import Epoch
 
-from .priors import DistriParam, BasePrior
+from .priors import DistriParam, BasePrior, BetaPrior as _BetaPrior
 
 
 class BaseTarget(ABC):
@@ -292,6 +292,91 @@ class NormalTargetEvaluator(TargetEvaluator):
             sd = self.target.stdev
 
         ll = jsp.stats.norm.logpdf(self.data, loc=modelled[self.index], scale=sd)
+
+        if self.time_weights is not None:
+            ll = ll * self.time_weights
+            return jnp.sum(ll) * self.target.weight
+        else:
+            return jnp.mean(ll) * self.target.weight
+
+
+class BetaTarget(BaseTarget):
+    """
+    A calibration target sampled from a binomial distribution
+    """
+
+    def __init__(
+        self,
+        name: str,
+        data: pd.Series,
+        a: pd.Series,
+        b: pd.Series,
+        weight: float = 1.0,
+        time_weights: pd.Series = None,
+        model_key: str = None,
+    ):
+        # Enforce floats for data and sample_sizes so TFP doesn't complain later
+        super().__init__(name, data.astype(float), weight, time_weights, model_key)
+        self._data_attrs = ["a", "b"]
+        self.a = a
+        self.b = b
+
+    def get_evaluator(self, model_times: pd.Index, epoch: Epoch) -> TargetEvaluator:
+        return BetaEvaluator(self, model_times, epoch)
+
+    @classmethod
+    def from_mean_and_ci(
+        cls,
+        name: str,
+        data: pd.Series,
+        spread: float,
+        weight: float = 1.0,
+        time_weights: pd.Series = None,
+        model_key: str = None,
+    ):
+        """Build a BetaTarget whose mean values are equal to data, and whose parameters
+        are determined by setting the 95% CI to (data-spread,data_spread)
+
+        Args:
+            name: Prior name
+            data: Target data
+            spread: The half-width of the 95% CI
+            weight (optional): Likelihood contribution weight
+            time_weights (optional): Series of likelihood contribution weights
+            model_key (optional): Key of model derived output to use for this target
+        """
+        a = data.copy()
+        b = data.copy()
+
+        cmin, cmax = 1e-16, 1.0 - 1e-16
+
+        for idx, v in data.items():
+            lower = np.clip(v - spread, cmin, cmax)
+            upper = np.clip(v + spread, cmin, cmax)
+            bprior = _BetaPrior.from_mean_and_ci("null", v, (lower, upper))
+            a.loc[idx] = bprior.a
+            b.loc[idx] = bprior.b
+
+        return cls(name, data, a, b, weight, time_weights, model_key)
+
+
+class BetaEvaluator(TargetEvaluator):
+    def __init__(self, target: BaseTarget, model_times: pd.Index, epoch: Epoch):
+        super().__init__(target, model_times, epoch)
+
+    def evaluate(self, modelled: np.array, parameters: dict) -> float:
+        from tensorflow_probability.substrates import jax as tfp
+
+        # use a binomial (n, p) where n is the sample size observed in the data and p the modelled proportion
+        # We then evaluate the binomial density for k, which represents the numerator observed in the data
+        a = self.target.a
+        b = self.target.b
+
+        m = modelled[self.index]
+        # k = self.target.data * n
+
+        bdist = tfp.distributions.Beta(a, b)
+        ll = bdist.log_prob(m)
 
         if self.time_weights is not None:
             ll = ll * self.time_weights
