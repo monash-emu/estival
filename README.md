@@ -62,3 +62,7 @@ Fix nevergrad wrapper issue with infinite support priors
 Improved ergonomics and sample type support
 - 0.4.9
 Add BetaTarget
+- 0.5.0
+Correct loc and iloc methods for SampleIterator
+- 0.5.1
+Make wrapper libraries (pymc/nevergrad) optional extras
