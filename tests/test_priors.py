@@ -1,6 +1,5 @@
 import pytest
 
-import pymc as pm
 
 from estival import priors as esp
 
@@ -12,12 +11,18 @@ def get_test_prior(prior_type: str) -> esp.BasePrior:
     return pclass._get_test()
 
 
-@pytest.mark.parametrize("prior_type", PRIORS)
-def test_to_pymc(prior_type: str):
-    p = get_test_prior(prior_type)
+try:
+    import pymc as pm
 
-    with pm.Model() as m:  # type: ignore
-        pm_prior = p.to_pymc()
+    @pytest.mark.parametrize("prior_type", PRIORS)
+    def test_to_pymc(prior_type: str):
+        p = get_test_prior(prior_type)
+
+        with pm.Model() as m:  # type: ignore
+            pm_prior = p.to_pymc()
+
+except:
+    pass
 
 
 @pytest.mark.parametrize("prior_type", PRIORS)
