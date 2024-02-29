@@ -14,7 +14,7 @@ keywords = [
     "summerepi"
 ]
 description = "A set of calibration and probabilistic programming tools for use with summerepi2"
-authors = ["David Shipman <dshipman@gmail.com>"]
+authors = ["David Shipman <dshipman@gmail.com>", "Romain Ragonnet <romain.ragonnet@monash.edu>", "James Trauer <james.trauer@monash.edu>"]
 packages = [
     {include = "estival"}
 ]
