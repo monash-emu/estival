@@ -3,7 +3,7 @@ import pytest
 
 from estival import priors as esp
 
-PRIORS = ["BetaPrior", "UniformPrior", "TruncNormalPrior", "GammaPrior"]
+PRIORS = ["BetaPrior", "UniformPrior", "NormalPrior", "TruncNormalPrior", "GammaPrior"]
 
 
 def get_test_prior(prior_type: str) -> esp.BasePrior:

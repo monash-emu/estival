@@ -243,6 +243,36 @@ class TruncNormalPrior(BasePrior):
         return cls("test", 0.0, 1.0, (0.0, 1.0))
 
 
+class NormalPrior(BasePrior):
+    """
+    A prior with a normal distribution.
+    """
+
+    def __init__(self, name: str, mean: float, stdev: float, size=1):
+        super().__init__(name, size)
+        self.mean, self.stdev = mean, stdev
+        self.distri_params = {
+            "loc": mean,
+            "scale": stdev,
+        }
+        self._rv = stats.norm(**self.distri_params)
+
+    def to_pymc(self):
+        return pm.Normal(
+            self.name,
+            mu=self.mean,
+            sigma=self.stdev,
+            shape=self._get_pymc_shape(),
+        )
+
+    def __repr__(self):
+        return f"{super().__repr__()} {{mean: {self.mean}, stdev: {self.stdev}}}"
+
+    @classmethod
+    def _get_test(cls):
+        return cls("test", 0.0, 1.0)
+
+
 class GammaPrior(BasePrior):
     """A gamma distributed prior"""
 
