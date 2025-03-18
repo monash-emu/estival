@@ -66,3 +66,5 @@ Add BetaTarget
 Correct loc and iloc methods for SampleIterator
 - 0.5.1
 Make wrapper libraries (pymc/nevergrad) optional extras
+- 0.5.2
+Add NormalPrior
