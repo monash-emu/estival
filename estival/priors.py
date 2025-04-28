@@ -105,8 +105,15 @@ class BasePrior(ABC):
     def __repr__(self):
         return f"{self.__class__.__name__} {self.name}"
 
-    def to_pymc(self):
+    def to_pymc(self, existing: dict):
         raise NotImplementedError()
+
+    def _get_param(self, attr: str, existing: dict):
+        k = getattr(self, attr)
+        if isinstance(k, BasePrior):
+            return existing[k.name]
+        else:
+            return k
 
     @classmethod
     def _get_test(cls):
@@ -153,7 +160,7 @@ class BetaPrior(BasePrior):
 
         return cls(name, best_a[0], best_b[0], size)
 
-    def to_pymc(self):
+    def to_pymc(self, existing):
         return pm.Beta(self.name, alpha=self.a, beta=self.b, shape=self._get_pymc_shape())
 
     @classmethod
@@ -174,7 +181,7 @@ class UniformPrior(BasePrior):
         self.size = size
         self._pymc_transform_eps_scale = 0.0
 
-    def to_pymc(self):
+    def to_pymc(self, existing):
         lower, upper = self.start, self.end
         eps = self._pymc_transform_eps_scale * (upper - lower)
 
@@ -219,17 +226,17 @@ class TruncNormalPrior(BasePrior):
         self.distri_params = {
             "loc": mean,
             "scale": stdev,
-            "a": (trunc_range[0] - mean) / stdev,
-            "b": (trunc_range[1] - mean) / stdev,
+            # "a": (trunc_range[0] - mean) / stdev,
+            # "b": (trunc_range[1] - mean) / stdev,
         }
-        self._rv = stats.truncnorm(**self.distri_params)
+        # self._rv = stats.truncnorm(**self.distri_params)
 
-    def to_pymc(self):
+    def to_pymc(self, existing):
         lower, upper = self.trunc_range
         return pm.TruncatedNormal(
             self.name,
-            mu=self.mean,
-            sigma=self.stdev,
+            mu=self._get_param("mean", existing),
+            sigma=self._get_param("stdev", existing),
             lower=lower,
             upper=upper,
             shape=self._get_pymc_shape(),
@@ -255,13 +262,13 @@ class NormalPrior(BasePrior):
             "loc": mean,
             "scale": stdev,
         }
-        self._rv = stats.norm(**self.distri_params)
+        # self._rv = stats.norm(**self.distri_params)
 
-    def to_pymc(self):
+    def to_pymc(self, existing):
         return pm.Normal(
             self.name,
-            mu=self.mean,
-            sigma=self.stdev,
+            mu=self._get_param("mean", existing),
+            sigma=self._get_param("stdev", existing),
             shape=self._get_pymc_shape(),
         )
 
@@ -285,7 +292,7 @@ class GammaPrior(BasePrior):
 
         self._rv = stats.gamma(shape, scale=scale)
 
-    def to_pymc(self):
+    def to_pymc(self, existing):
         alpha = self.shape
         beta = 1.0 / self.scale
 

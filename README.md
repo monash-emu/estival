@@ -68,3 +68,5 @@ Correct loc and iloc methods for SampleIterator
 Make wrapper libraries (pymc/nevergrad) optional extras
 - 0.5.2
 Add NormalPrior
+- 0.6.0
+Add hierarchical priors for PyMC

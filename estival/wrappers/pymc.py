@@ -85,8 +85,11 @@ def use_model(bcm: BayesianCompartmentalModel, include_ll=False) -> list:
 
     pymc_priors = []
 
+    realised_priors = {}
+
     for k, prior in bcm.priors.items():
-        pymc_priors.append(prior.to_pymc())
+        realised_priors[k] = cur_p = prior.to_pymc(realised_priors)
+        pymc_priors.append(cur_p)
 
     invars = [pt.as_tensor_variable(v) for v in pymc_priors]
 
